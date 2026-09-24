@@ -325,7 +325,7 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
 | Subject | Status | Notes |
 |---|---|---|
 | Retrieve GlobalUnsubscribeCategory | VERIFIED | unsubscribe categories in parent context; props: ID, Name, CategoryType, CreatedDate. ID=0 for all (enterprise-level categories). Categories: Activist, Legacy Unsubscribe, Unsub via Reply Mail, Known Spamtrap, Requested, Unsub via FBL, etc. |
-| Retrieve EmailSendDefinition | VERIFIED | send definitions in parent context; props: CustomerKey, Name, CreatedDate. **SendDefinitionStatus NOT retrievable** on the reference org (docs overstate). Keys: <ids>, errored_automations, slow_queries, etc. |
+| Retrieve EmailSendDefinition | VERIFIED | send definitions in parent context; props: CustomerKey, Name, CreatedDate. **SendDefinitionStatus NOT retrievable** on the reference org (docs overstate). keys are arbitrary strings set at creation |
 | ESD server-side filter | BROKEN | key filter → 0 rows even for existing keys (same unreliable-filter family as TSD/List) → `mcecli esd get` scans client-side (send definitions = trivial cost) |
 | ESD unfiltered count | VERIFIED | send definitions total in context — full scan is cheap |
 

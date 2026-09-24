@@ -103,7 +103,7 @@
 - dv/query envelopes: empty list results now serialize as data:[] instead
   of data:null (consistent shape for agents)
 - query: key→queryDefinitionId resolve + `query list` now page past the
-  server's 25-item cap (large-query-context context hid page-2 queries)
+  server's 25-item cap (a many-query context hid page-2 rows)
 - query: start endpoint takes an EMPTY body (JSON body failed silently
   live); start response status is now validated (fail fast, no poll)
 - query: polling moved to /actions/isrunning (the definition endpoint
