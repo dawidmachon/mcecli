@@ -1,0 +1,9 @@
+mcecli — Salesforce Marketing Cloud CLI for local agents
+Copyright 2026 dawidmachon
+
+Source: https://github.com/dawidmachon/mcecli
+
+mcecli source files are licensed under the Mozilla Public License,
+Version 2.0 (see LICENSE). You may build commercial products on top of
+it; modifications to mcecli's own source files must be made available
+under MPL-2.0, and this attribution must be retained.
