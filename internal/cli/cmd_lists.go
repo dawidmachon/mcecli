@@ -17,7 +17,7 @@ import (
 
 // List-centric operational reads (SOAP List / ListSubscriber).
 // VERIFIED live 2026-09-17: List [ID, ListName, Type]; ListSubscriber
-// via SubscriberKey filter (ListSubscriber by ListID NREs on this tenant —
+// via SubscriberKey filter (ListSubscriber by ListID NREs on the reference org —
 // wire-style-sensitive, not a scope issue).
 
 const usageLists = `mcecli lists — subscriber list reads (read-only, SOAP)

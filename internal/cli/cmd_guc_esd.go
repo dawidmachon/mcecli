@@ -18,7 +18,7 @@ import (
 // GUC + ESD reads (SOAP).
 // VERIFIED live 2026-09-17: GUC 9 rows (ID/Name/CategoryType/CreatedDate);
 // ESD 5 defs (CustomerKey/Name/CreatedDate — SendDefinitionStatus NOT
-// retrievable on this tenant).
+// retrievable on the reference org).
 
 const usageGUC = `mcecli guc — global unsubscribe categories (read-only, SOAP)
 
@@ -85,7 +85,7 @@ const usageESD = `mcecli esd — email send definitions (read-only, SOAP)
                [--limit N]    — max rows (default 200)
   mcecli esd get <customerKey>  — one definition
 
-SendDefinitionStatus is NOT retrievable on this tenant. Recent send events:
+SendDefinitionStatus is NOT retrievable on the reference org. Recent send events:
   mcecli dv sent (event dates, subscriber keys, send IDs)
   mcecli dv send <sendID> (EmailName/Subject metadata)
 `
@@ -157,7 +157,7 @@ func esdList(args []string, stdout, stderr io.Writer) int {
 	}
 	e := output.OK(200, out)
 	e.Count = len(out)
-	hint := "SendDefinitionStatus not retrievable on this tenant — recent send events: mcecli dv sent"
+	hint := "SendDefinitionStatus not retrievable on the reference org — recent send events: mcecli dv sent"
 	if truncated {
 		hint += " — TRUNCATED to --limit"
 	}

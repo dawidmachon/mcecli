@@ -13,11 +13,11 @@ import (
 )
 
 // SOAP object catalog: tenant-verified knowledge, embedded (the SOAP
-// Describe method is BLOCKED on this tenant — returns empty
+// Describe method is BLOCKED on the reference org — returns empty
 // DefinitionResponseMsg; evidence wire-dumped 2026-09-17 — so property
 // knowledge lives here instead). Sources:
 //
-//	live   = retrieved successfully on this tenant (bisected)
+//	live   = retrieved successfully on the reference org (bisected)
 //	docs   = listed in official docs, NOT retrievable/verified here
 //
 // Declared in one place; dv/sub read their defaults from this table.
@@ -52,7 +52,7 @@ var soapCatalog = []soapObject{
 	{
 		objectType: "BounceEvent", alias: "dv bounces", dataView: "_Bounce", use: "_Bounce — delivery failures (type/category)",
 		props:  []prop{{"SubscriberKey", "live"}, {"EventDate", "live"}, {"SendID", "live"}, {"BatchID", "live"}, {"BounceType", "live"}, {"BounceCategory", "live"}, {"EventType", "live"}},
-		quirks: []string{"BounceReason is in official docs but NOT retrievable on this tenant"},
+		quirks: []string{"BounceReason is in official docs but NOT retrievable on the reference org"},
 	},
 	{
 		objectType: "UnsubEvent", alias: "dv unsubs", dataView: "_Unsubscribes", use: "_Unsubscribes — opt-outs",
@@ -93,7 +93,7 @@ var soapCatalog = []soapObject{
 	{
 		objectType: "DataExtensionObject[KEY]", alias: "de rows --where", use: "DE rows, server-side filter",
 		props:  []prop{{"(DE columns)", "live"}},
-		quirks: []string{"BROKEN on this tenant: returns OK with 0 rows always — use mcecli query instead"},
+		quirks: []string{"BROKEN on the reference org: returns OK with 0 rows always — use mcecli query instead"},
 	},
 }
 
@@ -103,10 +103,10 @@ const usageDescribe = `mcecli describe — SOAP object catalog (embedded, offlin
   mcecli describe <object>      — retrievable properties for one object
                (SentEvent, Subscriber, Send, … — or dv/sub alias)
 
-SOAP Describe API is BLOCKED on this tenant (empty response, wire-dumped
+SOAP Describe API is BLOCKED on the reference org (empty response, wire-dumped
 2026-09-17) — this catalog is compiled from live bisection + official
 docs. props marked "live" were retrieved successfully here; "docs" are
-listed officially but NOT retrievable on this tenant.
+listed officially but NOT retrievable on the reference org.
 `
 
 func cmdDescribe(args []string, stdout, stderr io.Writer) int {

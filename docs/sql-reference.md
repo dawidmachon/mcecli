@@ -1,8 +1,8 @@
-# SFMC SQL reference — empirically validated on this tenant
+# SFMC SQL reference — empirically validated on the reference org
 
 Every construct below was tested against the platform via
 `mcecli query validate` (server-side syntax check, zero side effects) on
-2026-09-17. Battery: 64 constructs, docs/dev/tools/../sql-battery results.
+Battery: 64 constructs validated via the server-side syntax check.
 **Audience: agents writing Query Activity SQL.** Pair with `mcecli query run`.
 
 ## How the platform executes your SQL
@@ -85,13 +85,13 @@ Join keys: `_Sent.SubscriberID → _Subscribers.SubscriberID`,
 | `_Bounce` | SubscriberID, EventDate, JobID, SMTPBounceCategory, SMTPBounceReason, BounceType |
 | `_Subscribers` | SubscriberID, SubscriberKey, EmailAddress, Status, DateJoined, LastModified |
 
-Full column lists: `mcecli describe`-style bisecting or the data-views page
-of the official docs (NOT in sf-docs-scrap corpus).
+Full column lists: the official data-views documentation, or
+`mcecli de get <your-target-de>` for the target schema.
 
 ## Operational workflow (all read-only until run)
 
 ```
-mcecli query validate --text "SELECT …" --target DE_KEY --write   # syntax pre-check
+mcecli query validate --text "SELECT …" --target DE_KEY           # syntax pre-check (no gate)
 mcecli rest POST automation/v1/queries --write --body @def.json   # create (queryText field!)
 mcecli query run <key> --write --confirm                          # execute + poll
 mcecli de rows <targetDE>                                         # read results

@@ -152,7 +152,7 @@ func TestRetrieveEventObjectsSendsFilterAndProps(t *testing.T) {
 
 	filters := []Filter{
 		{Prop: "EventDate", Op: "greaterThan", Value: "2026-09-09T00:00:00"},
-		{Prop: "SendID", Op: "equals", Value: "61504"},
+		{Prop: "SendID", Op: "equals", Value: "12345"},
 	}
 	_, _, err := Retrieve(context.Background(), srv.URL, "T", "SentEvent",
 		[]string{"SubscriberKey", "EventDate", "SendID"}, Opts{Filters: filters, MaxRows: 100})
@@ -179,7 +179,7 @@ func TestRetrieveEventObjectsSendsFilterAndProps(t *testing.T) {
 	if !strings.Contains(got, "<tns:SimpleOperator>greaterThan</tns:SimpleOperator><tns:Value>2026-09-09T00:00:00</tns:Value>") {
 		t.Fatalf("EventDate filter wrong: %s", got)
 	}
-	if !strings.Contains(got, "<tns:SimpleOperator>equals</tns:SimpleOperator><tns:Value>61504</tns:Value>") {
+	if !strings.Contains(got, "<tns:SimpleOperator>equals</tns:SimpleOperator><tns:Value>12345</tns:Value>") {
 		t.Fatalf("SendID filter wrong: %s", got)
 	}
 	if strings.Contains(got, "<tns:QueryAllAccounts>") {
@@ -200,7 +200,7 @@ func TestRetrieveSingleFilterIsSimpleFilterPart(t *testing.T) {
 	defer srv.Close()
 
 	_, _, _ = Retrieve(context.Background(), srv.URL, "T", "Send",
-		[]string{"ID"}, Opts{Filters: []Filter{{Prop: "ID", Op: "equals", Value: "61504"}}})
+		[]string{"ID"}, Opts{Filters: []Filter{{Prop: "ID", Op: "equals", Value: "12345"}}})
 
 	if strings.Contains(got, "ComplexFilterPart") {
 		t.Fatalf("single filter must be a bare SimpleFilterPart: %s", got)
@@ -254,7 +254,7 @@ func TestParseFlattensPartnerProperties(t *testing.T) {
 <Results xsi:type="SentEvent" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <PartnerKey xsi:nil="true"/>
 <PartnerProperties><Name>SubscriberID</Name><Value>8039923</Value></PartnerProperties>
-<SendID>61504</SendID><SubscriberKey>sk-1</SubscriberKey>
+<SendID>12345</SendID><SubscriberKey>sk-1</SubscriberKey>
 </Results>
 </RetrieveResponseMsg></soap:Body></soap:Envelope>`
 	rows, status, _, err := parse([]byte(body))
@@ -267,7 +267,7 @@ func TestParseFlattensPartnerProperties(t *testing.T) {
 	if rows[0]["SubscriberID"] != "8039923" {
 		t.Fatalf("SubscriberID not flattened from PartnerProperties: %v", rows[0])
 	}
-	if rows[0]["SendID"] != "61504" {
+	if rows[0]["SendID"] != "12345" {
 		t.Fatalf("direct child lost: %v", rows[0])
 	}
 	if _, has := rows[0]["PartnerProperties"]; has {

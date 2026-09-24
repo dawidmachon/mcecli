@@ -4,7 +4,7 @@ Rule: every endpoint used by a curated command gets verified against a live
 instance before we trust it. Official docs are often wrong about parameter
 names, pagination and payload shapes — record observed reality here.
 
-Live instance: PMI a dev sandbox org (subdomain <subdomain>), package
+Live instance: a dev sandbox org (subdomain <subdomain>), package
 on BU 111111114 "<dev-bu>" under enterprise 111111111. Probed 2026-09-10.
 
 Status legend: UNVERIFIED (planned, not probed) · VERIFIED (probed live,
@@ -100,7 +100,7 @@ Evidence wire-dumped. Candidate causes, in test order:
 | Endpoint | Status | Notes |
 |---|---|---|
 | GET /interaction/v1/interactions/key:{key}?extras=activities | VERIFIED | journey detail: id/key/name/status; `key:` prefix form works; extras=activities accepted |
-| GET /interaction/v1/eventDefinitions?$pageSize=2 | VERIFIED | {count,page,items}; this context: 1 definition |
+| GET /interaction/v1/eventDefinitions?$pageSize=2 | VERIFIED | {count,page,items}; this context: a small number of definitions |
 | POST /automation/v1/queries/actions/validate | VERIFIED | body field is **Text** (NOT queryText — create uses queryText!); + targetKey + targetUpdateTypeId 0 (categoryId optional) → {queryValid,errors[],warnings[]}; bogus view → real server error text. Now `mcecli query validate` |
 
 Property-set reality vs docs (probed by bisection 2026-09-16):
@@ -325,7 +325,7 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
 | Subject | Status | Notes |
 |---|---|---|
 | Retrieve GlobalUnsubscribeCategory | VERIFIED | unsubscribe categories in parent context; props: ID, Name, CategoryType, CreatedDate. ID=0 for all (enterprise-level categories). Categories: Activist, Legacy Unsubscribe, Unsub via Reply Mail, Known Spamtrap, Requested, Unsub via FBL, etc. |
-| Retrieve EmailSendDefinition | VERIFIED | send definitions in parent context; props: CustomerKey, Name, CreatedDate. **SendDefinitionStatus NOT retrievable** on the reference org (docs overstate). Keys: 10030, Errored_automations_e-mail, long_running_queries, etc. |
+| Retrieve EmailSendDefinition | VERIFIED | send definitions in parent context; props: CustomerKey, Name, CreatedDate. **SendDefinitionStatus NOT retrievable** on the reference org (docs overstate). keys are arbitrary strings set at creation |
 | ESD server-side filter | BROKEN | key filter → 0 rows even for existing keys (same unreliable-filter family as TSD/List) → `mcecli esd get` scans client-side (send definitions = trivial cost) |
 | ESD unfiltered count | VERIFIED | send definitions total in context — full scan is cheap |
 

@@ -19,7 +19,7 @@ import (
 )
 
 // dvObjects maps CLI aliases to SOAP ObjectTypes + verified properties.
-// Property sets verified LIVE on this tenant 2026-09-16 (probe + rejection
+// Property sets verified LIVE on the reference org 2026-09-16 (probe + rejection
 // messages) — official docs overstate: BounceReason, UnsubscribeType,
 // OptOut, ListID-on-UnsubEvent are NOT retrievable here even though the
 // object docs list them. Wrong names return "Error: The Request Property(s)
@@ -188,7 +188,7 @@ func dvGet(args []string, stdout, stderr io.Writer) int {
 	var filters []soap.Filter
 	var sinceVal string
 	// dv send <id>: ID-equals ONLY. The Send object answers silent 0 rows for
-	// ComplexFilterPart (SentDate AND ID) on this tenant, while bare ID-equals
+	// ComplexFilterPart (SentDate AND ID) on the reference org, while bare ID-equals
 	// works (verified 2026-09-16) — and an exact-ID lookup needs no date bound.
 	exactIDLookup := alias == "send" && sendID != ""
 	if dv.dateProp != "" && !exactIDLookup {

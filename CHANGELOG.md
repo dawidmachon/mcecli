@@ -63,7 +63,7 @@
   healthreport CSV→JSON (30DaySuccessRate/30DayErrorCount per automation)
 - `mcecli describe <object>` — embedded SOAP object catalog (verified props,
   docs-only-not-retrievable props, quirks). SOAP Describe API is blocked
-  on this tenant (empty responses, wire-dumped) — catalog compiled from
+  on the reference org (empty responses, wire-dumped) — catalog compiled from
   live bisection instead
 - `mcecli ens callbacks|subs` — event-notification webhook reads (tenant
   monitors automation started/errored via verified callback)
@@ -103,7 +103,7 @@
 - dv/query envelopes: empty list results now serialize as data:[] instead
   of data:null (consistent shape for agents)
 - query: key→queryDefinitionId resolve + `query list` now page past the
-  server's 25-item cap (292-query context hid page-2 queries)
+  server's 25-item cap (a many-query context hid page-2 rows)
 - query: start endpoint takes an EMPTY body (JSON body failed silently
   live); start response status is now validated (fail fast, no poll)
 - query: polling moved to /actions/isrunning (the definition endpoint
@@ -113,7 +113,7 @@
   — also fixes multi-PK `de rows --where`
 
 ### Known quirks (documented in docs/dev/endpoint-notes.md)
-- Send object + ComplexFilterPart → silent 0 rows on this tenant;
+- Send object + ComplexFilterPart → silent 0 rows on the reference org;
   `mcecli dv send <id>` therefore uses ID-only filter
 - Query API /{id}/log stays empty on success; isrunning is the state source
 

@@ -45,8 +45,8 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 | Send (_Job metadata) | dv send | ✅ (ComplexFilterPart → silent 0 rows quirk) |
 | Subscriber | sub | ✅ (ModifiedDate n/r; email ambiguity across MIDs) |
 | ListSubscriber | sub | ✅ (per-list status) |
-| DataExtensionObject[key] rows | de rows --where | 🚫 0-rows on this tenant (root-cause candidates documented; use query) |
-| Describe (ObjectDefinitionRequest) | describe (embedded catalog) | 🚫 BLOCKED on this tenant: empty DefinitionResponseMsg every style (wire-dumped 2026-09-17) — catalog compiled from live bisection instead |
+| DataExtensionObject[key] rows | de rows --where | 🚫 0-rows on the reference org (root-cause candidates documented; use query) |
+| Describe (ObjectDefinitionRequest) | describe (embedded catalog) | 🚫 BLOCKED on the reference org: empty DefinitionResponseMsg every style (wire-dumped 2026-09-17) — catalog compiled from live bisection instead |
 | TriggeredSendDefinition | ts list\|get | ✅ (CustomerKey/Name/TriggeredSendStatus/CategoryID/CreatedDate; IsPaused n/r) |
 | List / ListSubscriber | lists / sub | ✅ (ID/ListName/Type; SubscriberKey filter works; ListID filter broken) |
 | AutomationInstance | auto (REST) | ✅ (via /instance/{id} REST; SOAP requires a filter) |
@@ -74,16 +74,16 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
    /instance/{id} → 404 (guid format differs; not pursued).
 3. ✅ DONE: `mcecli ts list|get` — TriggeredSendDefinition reads via SOAP
    Retrieve (CustomerKey/Name/TriggeredSendStatus/CategoryID/CreatedDate).
-   IsPaused NOT retrievable on this tenant despite docs. Statuses: Canceled/Inactive.
+   IsPaused NOT retrievable on the reference org despite docs. Statuses: Canceled/Inactive.
 4. ✅ DONE: `mcecli lists` + `mcecli lists members <subscriberKey>` — List reads
    (ID/ListName/Type); ListSubscriber via SubscriberKey filter. ListID filter
-   NREs on this tenant (wire-style-sensitive); SubscriberKey path works reliably.
+   NREs on the reference org (wire-style-sensitive); SubscriberKey path works reliably.
 
 **P2 — status 2026-09-17**
 5. 🚫 AutomationInstance — BLOCKED: instances on child-BU contexts;
    healthreport (REST) is the working ops view.
 6. ✅ DONE: `mcecli ens callbacks|subs` — ENS reads (1 verified callback
-   streaming AutomationInstanceStarted/Errored on this tenant).
+   streaming AutomationInstanceStarted/Errored on the reference org).
 7. ✅ DONE: `mcecli guc list` (unsubscribe categories). Publication left passthrough.
 8. ✅ DONE: `mcecli esd list|get` (send definitions; SendDefinitionStatus n/r).
    SendSummary verified (SendID filter works, TotalSent only) — kept
