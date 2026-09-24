@@ -11,19 +11,33 @@ and only write when explicitly told to. Zero third-party dependencies
 
 ## Install
 
-Requires [Go](https://go.dev/dl/) 1.23+.
+### Download a ready binary
+
+Static builds for Windows, Linux and macOS (amd64 + arm64) are attached to
+every [GitHub release](https://github.com/dawidmachon/mcecli/releases/latest).
+Download one, rename it to `mcecli` (Windows: `mcecli.exe`) and put it on
+your `PATH`:
 
 ```bash
 # macOS / Linux
-go install github.com/dawidmachon/mcecli@latest
+chmod +x mcecli-v1.0.0-linux-amd64
+sudo mv mcecli-v1.0.0-linux-amd64 /usr/local/bin/mcecli
 ```
 
 ```powershell
 # Windows (PowerShell)
+Move-Item mcecli-v1.0.0-windows-amd64.exe mcecli.exe
+```
+
+### With Go
+
+Requires [Go](https://go.dev/dl/) 1.23+:
+
+```bash
 go install github.com/dawidmachon/mcecli@latest
 ```
 
-Or build from source:
+### From source
 
 ```bash
 git clone https://github.com/dawidmachon/mcecli && cd mcecli
