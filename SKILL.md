@@ -162,7 +162,7 @@ Verified write patterns on this platform:
 | filter rows in huge DE (100k+) | `mcecli de rows <key> --where "Field=value"` — SOAP server-side filtering | works on millions of rows in <1s; field names case-sensitive; use exact schema field names from `mcecli de get` |
 | filter journeys by name | NOT supported server-side — /interactions ignores $filter | use mcecli de find / de list --search instead |
 | webhook monitoring | `mcecli ens callbacks` + `mcecli ens subs <id>` — which platform events stream where (tenant monitors automation started/errored) — VERIFIED live | writes gated via rest |
-| global unsubscribe categories | `mcecli guc list` — 9 enterprise categories — VERIFIED live | |
+| global unsubscribe categories | `mcecli guc list` — enterprise unsubscribe categories (platform defaults + org config) | |
 | email send definitions | `mcecli esd list|get` — user-initiated send setup (SendDefinitionStatus not retrievable) — VERIFIED live | |
 | create a data extension | `mcecli de create <name> --field "Col:Text(100)" --field "Created:Date" --category <folderID> --write` — builds the COMPLETE field object (raw endpoint rejects incomplete ones one property at a time) | folder ids: `mcecli folders --type dataextension` |
 | create a saved query | `mcecli query create <key> --text "SQL" --target DE --category <id> --write --confirm` | field is queryText; validate first: `mcecli query validate` (side-effect-free, no gate) |
@@ -171,9 +171,9 @@ Verified write patterns on this platform:
 | find folder ids | `mcecli folders --type dataextension|queryactivity` — ContentType server-side filter works | |
 | find endpoints by keyword | `mcecli api --search <keyword>` — cross-section discovery search | |
 | triggered sends (silently not going out?) | `mcecli ts list` / `mcecli ts get <key>` — TriggeredSendStatus Canceled/Inactive/Deleted = NOT sending (VERIFIED live; IsPaused not retrievable) | |
-| lists / who-is-on-what | `mcecli lists` (list inventory) + `mcecli lists members <subscriberKey>` (per-subscriber memberships) — VERIFIED live | ListID-filter broken tenant-wide; per-list membership = full scan, on demand |
+| lists / who-is-on-what | `mcecli lists` (list inventory) + `mcecli lists members <subscriberKey>` (per-subscriber memberships) — VERIFIED live | server-side ListID filter unreliable on some orgs; per-list membership = full scan, on demand |
 | automations ops (what is failing?) | `mcecli auto health` (30-day success/error per automation) → `mcecli auto list --search` → `mcecli auto <key>` (steps) — VERIFIED live | start/stop writes stay gated |
-| SOAP object properties | `mcecli describe <object>` — embedded tenant-verified catalog (Describe API blocked on this tenant) | offline, zero cost |
+| SOAP object properties | `mcecli describe <object>` — embedded catalog of live-verified properties (SOAP Describe is not usable on every org) | offline, zero cost |
 | subscriber state / list memberships | `mcecli sub <key|email>` — VERIFIED live: Status (Active/Bounced/Unsubscribed/Held) + ListSubscriber join; same address can exist on multiple MIDs → command surfaces ambiguous_matches, re-run with exact SubscriberKey | use `mcecli dv bounces --subscriber-key K` for bounce reasons |
 | data views (_Click, _Sent, _Open, …) | `mcecli dv sent|clicks|opens|bounces|unsubs|notsent` — VERIFIED live (1 SOAP call, server-side --since/--send-id filters); `mcecli dv send <SendID>` = _Job metadata | REST rowset NEVER reaches data views (404); use `mcecli query run` ONLY for SQL-only needs (aggregates, joins, _Subscribers, bulk) |
 | SQL syntax reference | docs/sql-reference.md — 64-construct battery validated live via query validate (2026-09-17): joins/UNION/subqueries/EXISTS/ROW_NUMBER work; single statement only, no DECLARE/INTO/EXEC | always mcecli query validate before create |

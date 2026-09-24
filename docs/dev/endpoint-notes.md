@@ -100,7 +100,7 @@ Evidence wire-dumped. Candidate causes, in test order:
 | Endpoint | Status | Notes |
 |---|---|---|
 | GET /interaction/v1/interactions/key:{key}?extras=activities | VERIFIED | journey detail: id/key/name/status; `key:` prefix form works; extras=activities accepted |
-| GET /interaction/v1/eventDefinitions?$pageSize=2 | VERIFIED | {count,page,items}; this context: 1 definition |
+| GET /interaction/v1/eventDefinitions?$pageSize=2 | VERIFIED | {count,page,items}; this context: a small number of definitions |
 | POST /automation/v1/queries/actions/validate | VERIFIED | body field is **Text** (NOT queryText — create uses queryText!); + targetKey + targetUpdateTypeId 0 (categoryId optional) → {queryValid,errors[],warnings[]}; bogus view → real server error text. Now `mcecli query validate` |
 
 Property-set reality vs docs (probed by bisection 2026-09-16):

@@ -510,7 +510,7 @@ func looksLikeGUID(s string) bool {
 func scannedCount(items []any) int { return len(items) }
 
 // automationActivityTypes maps Automation Studio objectTypeId values to
-// labels (community mapping; verified on this tenant: 300=query activities,
+// labels (community mapping; verified on the reference org: 300=query activities,
 // 43=import activities by name convention).
 var automationActivityTypes = map[int64]string{
 	300: "query",

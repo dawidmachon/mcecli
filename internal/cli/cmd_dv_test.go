@@ -82,7 +82,7 @@ func TestDvWrongFieldTeachesValidSet(t *testing.T) {
 func TestDvSendPositionalID(t *testing.T) {
 	var bodies []string
 	fakeSFMC(t, dvSoapRoute(&bodies, "OK",
-		`<Results xsi:type="Send"><ID>55012</ID><EmailName>automation_email</EmailName><FromName>Automation Monitoring</FromName></Results>`))
+		`<Results xsi:type="Send"><ID>12345</ID><EmailName>automation_email</EmailName><FromName>Ops Automation Monitoring</FromName></Results>`))
 
 	code, out, _ := run(t, "dv", "send", "55012")
 	if code != exitOK {
@@ -112,7 +112,7 @@ func TestDvUnknownObjectRefuses(t *testing.T) {
 func TestDvSendSubscriberKeyRefused(t *testing.T) {
 	var bodies []string
 	fakeSFMC(t, dvSoapRoute(&bodies, "OK",
-		`<Results xsi:type="Send"><ID>55012</ID></Results>`))
+		`<Results xsi:type="Send"><ID>12345</ID></Results>`))
 	code, out, _ := run(t, "dv", "send", "55012", "--subscriber-key", "x")
 	if code != exitUsage {
 		t.Fatalf("--subscriber-key on send must refuse: exit=%d out=%s", code, out)

@@ -69,7 +69,7 @@ func TestTSGetByKey(t *testing.T) {
 		t.Fatalf("exit=%d out=%s", code, out)
 	}
 	// ts get matches CLIENT-side: server-side CustomerKey filter returns 0
-	// rows on this tenant even for existing keys (verified live 2026-09-17)
+	// rows on the reference org even for existing keys (verified live 2026-09-17)
 	wire := bodies[len(bodies)-1]
 	if strings.Contains(wire, "<tns:SimpleOperator>equals</tns:SimpleOperator><tns:Value>TS_A</tns:Value>") {
 		t.Fatalf("get must NOT use a server-side CustomerKey filter (broken on tenant): %s", wire)

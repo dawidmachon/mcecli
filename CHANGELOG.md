@@ -63,7 +63,7 @@
   healthreport CSV→JSON (30DaySuccessRate/30DayErrorCount per automation)
 - `mcecli describe <object>` — embedded SOAP object catalog (verified props,
   docs-only-not-retrievable props, quirks). SOAP Describe API is blocked
-  on this tenant (empty responses, wire-dumped) — catalog compiled from
+  on the reference org (empty responses, wire-dumped) — catalog compiled from
   live bisection instead
 - `mcecli ens callbacks|subs` — event-notification webhook reads (tenant
   monitors automation started/errored via verified callback)
@@ -113,7 +113,7 @@
   — also fixes multi-PK `de rows --where`
 
 ### Known quirks (documented in docs/dev/endpoint-notes.md)
-- Send object + ComplexFilterPart → silent 0 rows on this tenant;
+- Send object + ComplexFilterPart → silent 0 rows on the reference org;
   `mcecli dv send <id>` therefore uses ID-only filter
 - Query API /{id}/log stays empty on success; isrunning is the state source
 
