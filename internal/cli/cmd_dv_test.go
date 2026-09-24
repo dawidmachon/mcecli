@@ -30,7 +30,7 @@ func dvSoapRoute(bodies *[]string, overallStatus, resultsXML string) func(*http.
 func TestDvSentHappyPath(t *testing.T) {
 	var bodies []string
 	fakeSFMC(t, dvSoapRoute(&bodies, "OK",
-		`<Results xsi:type="SentEvent"><SendID>12345</SendID><SubscriberKey>sk-1</SubscriberKey><EventDate>2026-09-10T01:26:37</EventDate><BatchID>790</BatchID></Results>`))
+		`<Results xsi:type="SentEvent"><SendID>61504</SendID><SubscriberKey>sk-1</SubscriberKey><EventDate>2026-09-10T01:26:37</EventDate><BatchID>790</BatchID></Results>`))
 
 	code, out, errOut := run(t, "dv", "sent", "--since", "7d", "--limit", "5")
 	if code != exitOK {
@@ -41,7 +41,7 @@ func TestDvSentHappyPath(t *testing.T) {
 		t.Fatalf("count=1 expected: %v", e)
 	}
 	row := e["data"].([]any)[0].(map[string]any)
-	if row["SubscriberKey"] != "sk-1" || row["SendID"] != "12345" {
+	if row["SubscriberKey"] != "sk-1" || row["SendID"] != "61504" {
 		t.Fatalf("row not flattened: %v", row)
 	}
 	if len(bodies) == 0 {
@@ -84,14 +84,14 @@ func TestDvSendPositionalID(t *testing.T) {
 	fakeSFMC(t, dvSoapRoute(&bodies, "OK",
 		`<Results xsi:type="Send"><ID>12345</ID><EmailName>automation_events_email</EmailName><FromName>Ops Automation Monitoring</FromName></Results>`))
 
-	code, out, _ := run(t, "dv", "send", "12345")
+	code, out, _ := run(t, "dv", "send", "61504")
 	if code != exitOK {
 		t.Fatalf("exit=%d out=%s", code, out)
 	}
 	if len(bodies) == 0 || !strings.Contains(bodies[0], "<tns:ObjectType>Send</tns:ObjectType>") {
 		t.Fatalf("wire wrong: %v", bodies)
 	}
-	if !strings.Contains(bodies[0], "<tns:Property>ID</tns:Property><tns:SimpleOperator>equals</tns:SimpleOperator><tns:Value>12345</tns:Value>") {
+	if !strings.Contains(bodies[0], "<tns:Property>ID</tns:Property><tns:SimpleOperator>equals</tns:SimpleOperator><tns:Value>61504</tns:Value>") {
 		t.Fatalf("positional id must become ID equals filter: %s", bodies[0])
 	}
 }
@@ -113,7 +113,7 @@ func TestDvSendSubscriberKeyRefused(t *testing.T) {
 	var bodies []string
 	fakeSFMC(t, dvSoapRoute(&bodies, "OK",
 		`<Results xsi:type="Send"><ID>12345</ID></Results>`))
-	code, out, _ := run(t, "dv", "send", "12345", "--subscriber-key", "x")
+	code, out, _ := run(t, "dv", "send", "61504", "--subscriber-key", "x")
 	if code != exitUsage {
 		t.Fatalf("--subscriber-key on send must refuse: exit=%d out=%s", code, out)
 	}
