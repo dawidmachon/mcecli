@@ -41,11 +41,13 @@ two default behaviors nearly produced silent wrong answers. EVALUATED:
 1. **No full-DE enumeration** — `de list` is search-only ($search required,
    server caps pages at 25, ignores $pageSize). Estate-scale audits
    ("biggest DE", "schema audit", "orphan detection") need dozens of calls.
-   → **DESIGNED**: `de list --all`. Preferred strategy: SOAP DataExtension
-   Retrieve (2500/page, precedent: AccountUser retrieves); fallback:
-   $search letter-sweep + client-side dedupe. Pending live probe of SOAP
-   viability on DataExtension, then owner go.
-   Status: highest-value open item; round-1-equivalent priority.
+   → **SHIPPED** (same session, after live probe): `de list --all` — SOAP
+   DataExtension Retrieve, ONE round trip for a full BU inventory
+   (sub-second for a four-digit DE count vs dozens of REST calls).
+   --category filters server-side; --search client-side; --limit caps
+   loudly. Probe findings recorded in endpoint-notes.md: RowCount is NOT
+   retrievable via SOAP on this object; CategoryID equals works as a
+   server-side filter; MaxRows does not trim single-page responses.
 
 2. **`auto health` silently truncated** — default `--limit 100` cut a
    larger report with `count` equal to returned rows and no hint: looks
@@ -77,7 +79,7 @@ two default behaviors nearly produced silent wrong answers. EVALUATED:
    `query create` exists → SHIPPED (hints now point to `query create`;
    `query` help text finally documents create/get/update).
 
-Round-3 verdict: 4 shipped, 1 designed (needs probe), 0 rejected.
+Round-3 verdict: 5 shipped, 0 rejected.
 Guiding lesson recorded: **defaults must not silently decide correctness
 questions, and a hint must never state a contract the platform doesn't
 honor.**

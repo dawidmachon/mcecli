@@ -378,7 +378,14 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
   automation/v1/automations list, which is context-scoped). Arrives as ONE
   CSV response — no server-side paging; any truncation is client-side
   (auto health default is now full-scan).
-- Full-DE enumeration: no plain listing exists in the REST API
-  (search-only). Candidate designs for `de list --all`: SOAP DataExtension
-  Retrieve (2500/page per AccountUser precedent) vs $search letter-sweep
-  with client-side dedupe. UNVERIFIED — live probe pending.
+- Full-DE enumeration — VERIFIED 2026-09-25 via SOAP DataExtension Retrieve
+  (shipped as `de list --all`): Name/CustomerKey/CategoryID/CreatedDate/
+  IsSendable all retrievable; a full BU inventory returns in ONE round trip
+  (~sub-second for a four-digit DE count); CustomerKeys are unique.
+  NOT retrievable on this object: RowCount ("do not match with the fields
+  of DataExtension retrieve" — the REST listing's rowCount has no SOAP
+  counterpart). CategoryID `equals` filters SERVER-side (bogus value →
+  0 rows, status OK). Scope: a BU-context token returns that BU's DEs —
+  do NOT set QueryAllAccounts for this path. CAVEAT: soap.Opts.MaxRows
+  does not trim a single-page response (it only stops continuation) —
+  client-side caps must trim in the command (`--limit` does, loudly).

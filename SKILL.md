@@ -57,6 +57,7 @@ Per-call override instead of switching: `mcecli --bu <name|MID> de list`
     mcecli api data --filter customobject      # EXPLORE the API: discovery-based method index
     mcecli api messaging getMessageSendsCollection   # method detail + ready mcecli rest line
     mcecli de list --search preference         # $search is required by the API
+    mcecli de list --all                       # FULL DE inventory of the current BU (SOAP, one call; --category filters server-side)
     mcecli de get <deKey>                      # definition + field schema
     mcecli de rows <deKey> --fields email --size 50
     mcecli de rows --next "data/v1/customobjectdata/token/.../rowset?$page=2"
