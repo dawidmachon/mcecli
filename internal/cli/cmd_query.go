@@ -98,6 +98,16 @@ const usageQuery = `mcecli query — run and retrieve SQL-on-platform query resu
                --target KEY   target DE key (validated against it)
                [--category N] folder id (optional)
                --write REQUIRED (POST, though nothing is written)
+  mcecli query create <key>     — create a saved query definition
+               --text "SQL|@f.sql" — required
+               --target KEY   target DE key — required
+               --category N   folder id — required (mcecli folders --type queryactivity)
+               [--name N] [--description N] [--update-mode overwrite|update]
+               --write --confirm REQUIRED (a saved query writes to its
+               target whenever it runs)
+  mcecli query get <key>        — full definition incl. queryText
+  mcecli query update <key>     — patch [--text|--target|--category|--name|
+               --description|--update-mode]  --write --confirm REQUIRED
 
 Query API (automation/v1/queries): SFMC executes SQL server-side, writes
 results to a target DE. Read the target DE afterwards with mcecli de rows.
@@ -557,9 +567,9 @@ func queryValidate(args []string, stdout, stderr io.Writer) int {
 	if !valid {
 		e.Hint = "SQL is invalid — fix errors above; nothing was created or run"
 	} else if len(warnList) > 0 {
-		e.Hint = "SQL is valid (with warnings) — create with: mcecli rest POST automation/v1/queries --write --body @f.json (field name there is queryText, NOT Text)"
+		e.Hint = "SQL is valid (with warnings) — create with: mcecli query create <key> --text @f.sql --target <DE-key> --category <id> --write --confirm"
 	} else {
-		e.Hint = "SQL is valid — create with: mcecli rest POST automation/v1/queries --write --body @f.json (field name there is queryText, NOT Text)"
+		e.Hint = "SQL is valid — create with: mcecli query create <key> --text @f.sql --target <DE-key> --category <id> --write --confirm"
 	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK

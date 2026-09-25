@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dawidmachon/mcecli/internal/output"
@@ -22,14 +23,19 @@ import (
 
 const usageAuto = `mcecli auto — automation operational reads (read-only)
 
-  mcecli auto list               — automations (name/key/status/lastRunTime)
+  mcecli auto list               — automations in the CURRENT BU context
+                                (name/key/status/lastRunTime)
                [--search STR] — client-side filter on name+key
                [--status S]   — client-side filter on status (e.g. Error)
                [--limit N]    — max rows after filtering (default 50)
                [--all]        — scan all pages (may be thousands of rows)
   mcecli auto <id-or-key>        — one automation: detail + step activities
-  mcecli auto health             — platform health report (30-day success/
-                                error/skip counts per automation) as JSON
+  mcecli auto health             — ESTATE-WIDE health report (30-day success/
+                                error/skip counts per automation; covers ALL
+                                BUs under the enterprise account, unlike
+                                list which is context-scoped) as JSON
+               [--limit N]    — cap rows (default: full report — it arrives
+                                as one response; a cap is loudly hinted)
 
 Ops debugging: health → pick failing automation → detail → steps.
 `
@@ -348,7 +354,7 @@ func autoHealth(args []string, stdout, stderr io.Writer) int {
 	var c common
 	var limit int
 	addCommon(fs, &c)
-	fs.IntVar(&limit, "limit", 100, "max rows")
+	fs.IntVar(&limit, "limit", 0, "max rows (0 = full report — the default)")
 	if err := parseCmd(fs, args); err != nil {
 		return exitUsage
 	}
@@ -372,15 +378,22 @@ func autoHealth(args []string, stdout, stderr io.Writer) int {
 	if rows == nil {
 		rows = [][]string{}
 	}
-	out := make([]map[string]string, 0, len(rows))
+	total := len(rows)
+	out := make([]map[string]any, 0, total)
 	for _, r := range rows {
-		if len(out) >= limit && limit > 0 {
+		if limit > 0 && len(out) >= limit {
 			break
 		}
-		m := map[string]string{}
+		m := make(map[string]any, len(headers))
 		for i, h := range headers {
 			if i < len(r) {
-				m[h] = r[i]
+				// counters arrive as CSV strings — coerce numeric-looking
+				// cells to JSON numbers so consumers don't have to cast
+				if f, err := strconv.ParseFloat(r[i], 64); err == nil {
+					m[h] = f
+				} else {
+					m[h] = r[i]
+				}
 			}
 		}
 		out = append(out, m)
@@ -388,6 +401,13 @@ func autoHealth(args []string, stdout, stderr io.Writer) int {
 	e := output.OK(st, out)
 	e.Count = len(out)
 	e.Hint = "sorted by platform; watch 30DaySuccessRate < 100 and 30DayErrorCount > 0"
+	if limit > 0 && total > len(out) {
+		// never truncate a diagnostic report silently — the whole point of
+		// this command is "what is failing"; a quiet cap would ship false
+		// answers
+		e.Hint = fmt.Sprintf("CAPPED by --limit %d: report contains %d rows, showing %d — drop --limit for the full report",
+			limit, total, len(out))
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }

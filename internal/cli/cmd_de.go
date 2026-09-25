@@ -29,7 +29,8 @@ import (
 const usageDE = `mcecli de — data extension commands (list/get/rows/dump are reads; add is a gated write)
 
   mcecli de list  --search NAME [--category ID] [--page N --size N] [--fields f1,f2]
-               --search is REQUIRED (no plain listing exists in the API).
+               --search is REQUIRED (no plain listing exists in the API);
+               --category NARROWS the search (AND filter, not an alternative).
   mcecli de get   <key>            — definition + field schema (resolves key via search)
   mcecli de rows  <key|name> [--page N --size N] [--fields f1,f2] [--next PATH]
                paging is token-based; the envelope's "next" carries the
@@ -97,9 +98,13 @@ func deList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usageDE)
 		return exitOK
 	}
-	if search == "" && category == "" {
-		e := output.Fail(0, "customObjects requires $search or categoryId",
-			"mcecli de list --search <term>  (or --category <id>)")
+	if search == "" {
+		// $search is required even when categoryId narrows the results — the
+		// platform 400s on categoryId alone (VERIFIED: it is an AND-filter,
+		// not an alternative), so fail fast client-side with the truthful
+		// contract instead of forwarding a request that cannot succeed.
+		e := output.Fail(0, "this endpoint requires $search — a plain listing does not exist",
+			"mcecli de list --search <term>  (--category <id> narrows the search: AND filter, not an alternative)")
 		_ = output.Print(e, c.pretty, stdout)
 		return exitUsage
 	}

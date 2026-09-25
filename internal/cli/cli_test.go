@@ -649,10 +649,14 @@ func TestDeListCategoryParamReachesWire(t *testing.T) {
 			if r.URL.Query().Get("categoryId") == "" {
 				t.Errorf("--category must map to categoryId param, got %s", r.URL.RawQuery)
 			}
+			// round 3: categoryId is an AND-filter — $search must ride along
+			if r.URL.Query().Get("$search") == "" {
+				t.Errorf("$search is required even with categoryId, got %s", r.URL.RawQuery)
+			}
 			_, _ = w.Write([]byte(`{"count":0,"items":[]}`))
 		})
 	})
-	if code, out, _ := run(t, "de", "list", "--category", "9387"); code != exitOK {
+	if code, out, _ := run(t, "de", "list", "--search", "x", "--category", "9387"); code != exitOK {
 		t.Fatalf("exit=%d out=%s", code, out)
 	}
 }

@@ -360,3 +360,25 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
 | targetUpdateTypeId | VERIFIED | 0=Overwrite (targetUpdateTypeName confirms); 1 seen only as "Update" in docs — unverified live |
 | SOAP Retrieve AccountUser | VERIFIED | ID/UserID/Name/Email/ActiveFlag/DefaultBusinessUnit retrievable; **Delete NOT retrievable**; no server filter → client-side search; users parent ctx |
 | SOAP Retrieve DataFolder | VERIFIED | ContentType server-side filter WORKS (queryactivity → folder list, dataextension → 34); ParentFolderID NOT retrievable |
+
+## customObjects listing + healthreport semantics — agent-feedback round 3 (2026-09-25)
+
+- data/v1/customObjects: **$search is REQUIRED even when categoryId is
+  supplied** (VERIFIED via agent field test: categoryId alone → platform
+  400 "$search is a required parameter"). categoryId is an AND-narrowing
+  filter, NOT an alternative to $search. de list now fails fast
+  client-side with the truthful contract.
+- $pageSize is ignored by this endpoint; server pages are capped at 25
+  rows (both already surfaced by de list transparency hints).
+- rowCount on customObjects items: platform-reported; semantics UNVERIFIED
+  (fresh vs cached, per-BU vs shared) — treat as approximate. For exact
+  counts use the rowset (`de rows`) or a platform-side query.
+- automation/v1/automations/healthreport: **ESTATE-WIDE** — rows cover all
+  BUs under the enterprise account, not just the context BU (unlike
+  automation/v1/automations list, which is context-scoped). Arrives as ONE
+  CSV response — no server-side paging; any truncation is client-side
+  (auto health default is now full-scan).
+- Full-DE enumeration: no plain listing exists in the REST API
+  (search-only). Candidate designs for `de list --all`: SOAP DataExtension
+  Retrieve (2500/page per AccountUser precedent) vs $search letter-sweep
+  with client-side dedupe. UNVERIFIED — live probe pending.
