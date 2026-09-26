@@ -3,7 +3,11 @@
 Public releases and the full feature history live in [CHANGELOG.md](CHANGELOG.md).
 This document covers what's coming next.
 
-## v1.1 (next release)
+## v1.1 — shipped (2026-09-26)
+
+All six planned items plus the completeness/quality batch shipped.
+
+Shipped items:
 
 - [x] journey version modeling — shipped as `journey list` +
       `journey versions <key>`: curated collection read plus the FULL
