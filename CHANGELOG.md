@@ -16,6 +16,22 @@
 - query hints now point to `query create`/`get`/`update` (was: raw rest)
 
 ### Added (v1.1 roadmap batch)
+- `journey list` / `journey versions <key>` — journey version modeling.
+  PROBED: the collection returns ONE item per key (newest version only;
+  $pageSize and $filter not honored); the FULL version history lives at
+  /interaction/v1/interactions/status/key:{key}?AllVersions=true (a bare
+  call 400s with the teaching message; ?VersionNumber=N narrows; unknown
+  version returns an empty array — hinted, not mistaken for success).
+  list: curated projection + client-side --search; versions: sorted
+  history with per-version status. Lifecycle writes (publish/stop/pause)
+  deliberately stay behind `rest` gates
+- `soap retrieve <ObjectType> --props a,b,c [--filter P=V]` — the SOAP
+  passthrough redesign. Retrieve-only BY CONSTRUCTION: the request is
+  built from structured flags by the shared soap package, so no write
+  verb is expressible (and reads need no gate). --props required (no
+  accidental full pulls); equals-only repeatable filters; loud caps;
+  wrong property names surface the platform teaching error pointed at
+  `mcecli describe`
 - `de list` default output curation — lean default projection
   (name/key/rowCount); `--full` for complete raw objects; `--fields`
   overrides both (`--full` + `--fields` is a usage error). Request wire
@@ -29,6 +45,14 @@
 - `query update --diff` — read-only dry run: resolves the key, GETs the
   current definition and reports field-by-field what the proposed patch
   would change; sends no PATCH; mutually exclusive with --write/--confirm
+
+### Closed (roadmap corrections)
+- per-recipient send status: /messaging/v1/emailSends/{jobId} does not
+  exist — shipped as `dv recipients` on /messaging/v1/jobs/{id}/stats/sends
+- bulk ingest: the /hub/v1/async staged flow (create/stage/complete) does
+  not exist in discovery (data + hub sections audited); the working bulk
+  path was already shipped as `de add` (data/v1/async rows); the hub
+  analogue /hub/v1/dataeventsasync stays passthrough-only (scope caveats)
 
 ### Fixed
 - usage text: `query validate` gate line still claimed --write was

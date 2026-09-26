@@ -56,6 +56,9 @@ Per-call override instead of switching: `mcecli --bu <name|MID> de list`
 
     mcecli api data --filter customobject      # EXPLORE the API: discovery-based method index
     mcecli api messaging getMessageSendsCollection   # method detail + ready mcecli rest line
+    mcecli journey list                        # journeys in this BU (newest version per key)
+    mcecli journey versions <key>              # FULL version history: v1..vN with statuses (one call)
+    mcecli soap retrieve List --props ID,ListName --filter ListName=News   # any SOAP object not curated yet
     mcecli de list --search preference         # $search is required by the API; lean default output (name/key/rowCount)
     mcecli de list --search preference --full  # complete raw objects (--fields picks columns; overrides lean default)
     mcecli de list --all                       # FULL DE inventory of the current BU (SOAP, one call; --category filters server-side)
@@ -166,7 +169,7 @@ Verified write patterns on this platform:
 | insert/update ONE row | `mcecli de add <key> --data '{...}' --write` | async upsert, idempotent |
 | bulk update known rows | `mcecli rest PUT data/v1/async/dataextensions/key:{key}/rows` with many items | batched async |
 | filter rows in huge DE (100k+) | `mcecli de rows <key> --where "Field=value"` — SOAP server-side filtering | works on millions of rows in <1s; field names case-sensitive; use exact schema field names from `mcecli de get` |
-| filter journeys by name | NOT supported server-side — /interactions ignores $filter | use mcecli de find / de list --search instead |
+| filter journeys by name | NOT supported server-side — /interactions ignores $filter | `mcecli journey list --search X` filters client-side; journey VERSIONS: `mcecli journey versions <key>` (one call, AllVersions=true) |
 | webhook monitoring | `mcecli ens callbacks` + `mcecli ens subs <id>` — which platform events stream where (tenant monitors automation started/errored) — VERIFIED live | writes gated via rest |
 | global unsubscribe categories | `mcecli guc list` — enterprise unsubscribe categories (platform defaults + org config) | |
 | email send definitions | `mcecli esd list|get` — user-initiated send setup (SendDefinitionStatus not retrievable) — VERIFIED live | |

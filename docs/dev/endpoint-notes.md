@@ -211,14 +211,16 @@ bulk exports). REST rowset NEVER reaches data views (verified 404).
 | POST/PUT /customobjectdata/.../rowset | BROKEN | 404 on this host |
 | /hub/v1/dataevents/key:{key}/rows | UNVERIFIED | "Not Authorized" with current token — scope gap, not path gap |
 
-### Bulk Data Ingest (RANKING)
-For millions-of-rows workloads. Flow: create job → stage data → complete → poll status.
-Not implementing full flow yet — ranked note only.
-- `POST /hub/v1/async/dataextensions/key:{key}/create` — create ingest job
-- `POST /hub/v1/async/dataextensions/key:{key}/stage` — upload batches
-- `POST /hub/v1/async/dataextensions/key:{key}/complete` — trigger import
-- `GET /data/v1/async/{id}/status` — poll progress
-- `GET /data/v1/async/{id}/results` — fetch results
+### Bulk Data Ingest (CLOSED v1.1)
+The staged-ingest flow guessed here (create → stage → complete) does NOT
+exist in this platform's discovery index — neither in the data section
+(93 methods audited) nor in hub (103 methods audited). The working bulk
+path is the one already curated as `de add`:
+- PUT/POST /data/v1/async/dataextensions/key:{key}/rows — chunked async
+  upserts (202 + job id; poll /data/v1/async/{id}/status)
+The hub analogue is /hub/v1/dataeventsasync/key:{key}/rowset (bulk rows;
+POST rowset/delete exists too — destructive) — see "DE sync rows" below:
+same package-scope caveats, left passthrough-only.
 
 ### DE sync rows (RANKING)
 `/hub/v1/dataevents/key:{key}/rows` — synchronous insert (immediate, not async).
@@ -228,10 +230,21 @@ Currently returns "Not Authorized" with the installed package token (scope gap).
 
 ## Journeys and Events
 
+Journey VERSION semantics (VERIFIED live, round 5): the collection returns
+ONE item per key (newest version only); each publish bumps `version`. The
+FULL history lives on the status endpoint:
+GET /interaction/v1/interactions/status/key:{key}?AllVersions=true →
+[{id, status, versionNumber}, …] (a bare call 400s with the teaching
+message "AllVersions=true or VersionNumber required"; ?VersionNumber=N
+narrows to one version; an unknown version returns an empty array).
+Older versions are immutable history with their own status (Stopped/…).
+Curated: `mcecli journey list` + `mcecli journey versions <key>`.
+
 | Endpoint | Status | Notes |
 |---|---|---|
-| GET /interaction/v1/interactions | VERIFIED | journeys; /interactions (NOT /journeys); {count,page,items} |
-| GET /interaction/v1/interactions/{id} | UNVERIFIED | single journey detail |
+| GET /interaction/v1/interactions | VERIFIED | journeys; /interactions (NOT /journeys); {count,page,items}; newest version only; $pageSize NOT honored (server pages at 50); $filter/name filtering NOT honored — filter client-side |
+| GET /interaction/v1/interactions/status/key:{key} | VERIFIED | version history with ?AllVersions=true or ?VersionNumber=N (see notes above) |
+| GET /interaction/v1/interactions/{id} | UNVERIFIED | single journey detail ({id} = definitionId) |
 | POST /interaction/v1/interactions/stop/{id} | UNVERIFIED | stops running journey; --confirm gated |
 | POST /interaction/v1/interactions/pause/{id} | UNVERIFIED | pauses journey; --confirm gated |
 | POST /interaction/v1/interactions/resume/{id} | UNVERIFIED | resumes journey; --confirm gated |

@@ -42,10 +42,15 @@ Commands:
   sub <key|email>   subscriber subscription state + list memberships
                     (read-only; answers "why is this person not getting mail?")
   describe [object] SOAP object catalog: verified props + quirks (offline)
+  soap retrieve <ObjectType>  generic SOAP read: --props REQUIRED, --filter
+                    P=V (repeatable). Retrieve-only — writes stay gated
   auto list|health  automation operational reads: list/detail/healthreport
                     (30-day success/error counts — "what is failing?")
   ts list|get       triggered send definitions (Canceled/Inactive = sends
                     silently not going out)
+  journey list|versions  journey reads (REST): curated list + FULL version
+                    history per key (read-only; lifecycle writes stay gated
+                    behind rest)
   lists [members <id>]  subscriber lists + who-is-on-list (read-only)
   guc list          global unsubscribe categories (enterprise)
   esd list|get      email send definitions (user-initiated sends)
@@ -145,6 +150,7 @@ var helpTopics = map[string]string{
 	"session":  usageSession,
 	"query":    usageQuery,
 	"ts":       usageTS,
+	"journey":  usageJourney,
 	"lists":    usageLists,
 	"sub":      usageSub,
 	"auto":     usageAuto,
@@ -152,6 +158,7 @@ var helpTopics = map[string]string{
 	"guc":      usageGUC,
 	"esd":      usageESD,
 	"describe": usageDescribe,
+	"soap":     usageSoap,
 	"users":    usageUsers,
 	"folders":  usageFolders,
 	"journal":  usageJournal,
@@ -220,10 +227,14 @@ func Run(args []string, stdout, stderr io.Writer, version, skillMD string) int {
 		return cmdSub(rest, stdout, stderr)
 	case "describe":
 		return cmdDescribe(rest, stdout, stderr)
+	case "soap":
+		return cmdSoap(rest, stdout, stderr)
 	case "auto":
 		return cmdAuto(rest, stdout, stderr)
 	case "ts":
 		return cmdTS(rest, stdout, stderr)
+	case "journey":
+		return cmdJourney(rest, stdout, stderr)
 	case "lists":
 		return cmdLists(rest, stdout, stderr)
 	case "ens":

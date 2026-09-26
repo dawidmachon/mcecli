@@ -20,7 +20,8 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 | /automation/v1/queries (list/create/validate/delete) | query list/create* | ✅ (*create via rest) |
 | /automation/v1/queries/{id}/actions/{start,isrunning} | query run/status | ✅ |
 | /automation/v1/queries/{id}/log | query run | ✅ (empty-on-success quirk) |
-| /interaction/v1/interactions (+key:{key}?extras) | rest / md pull | ✅ |
+| /interaction/v1/interactions (+key:{key}?extras) | journey list / rest / md pull | ✅ (newest version only; $pageSize + $filter not honored) |
+| /interaction/v1/interactions/status/key:{key} (version history) | journey versions | ✅ (AllVersions=true / VersionNumber=N; unknown version → empty array) |
 | /interaction/v1/eventDefinitions | rest | ✅ |
 | /interaction/v1/interactions/{id} lifecycle (stop/pause/publish/event) | ❌ | gated writes — deferred (sendout risk) |
 | /automation/v1/automations (list/detail/healthreport) | auto list/detail/health | ✅ (start/stop stay gated via rest) |
@@ -30,7 +31,9 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 | /contacts/v1/schema (+attributeGroups) | bu discover | ✅ (partial) |
 | /contacts/v1/attributeSets deep probing | ❌ | 🔲 — P3 |
 | /hub/v1/dataevents rows (sync insert) | ❌ | 🚫 403 scope gap on the installed package |
-| /hub/v1/async bulk ingest (create/stage/complete) | ❌ | ranked note only — P3 |
+| /hub/v1/dataeventsasync (row/rowset upsert+delete) | rest | passthrough-only — same scope caveats; `de add` covers the bulk flow |
+| /hub/v1/async bulk ingest (create/stage/complete) | ❌ | CLOSED v1.1: paths don't exist in discovery (data + hub audited); the working bulk path is de add (data/v1/async rows) |
+| SOAP generic retrieve (any object) | soap retrieve | ✅ (Retrieve-only by construction; --props required; equals filters) |
 | /interaction/v1/eventNotification (callbacks/subscriptions) | ❌ | 🔲 — P2 (webhook monitoring) |
 | /platform/v1/token introspection | ❌ | scope-debug use — P3 |
 | discovery docs /{section}/v1/rest | api | ✅ (10 sections) |

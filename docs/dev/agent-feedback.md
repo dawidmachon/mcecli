@@ -127,3 +127,43 @@ Round-4 verdict: 4 shipped, 1 deferred (tracking family), 0 rejected.
 Lesson reinforced: probe the endpoint before designing the command — the
 roadmap's endpoint guess was wrong, and the discovery index settled it in
 one call.
+
+---
+
+## Round 5 — v1.1 roadmap completion (2026-09-25)
+
+The three remaining v1.1 items, each probed live before implementation.
+Two of three roadmap assumptions corrected by the platform:
+
+1. **Journey version modeling** → **SHIPPED** as `journey list` +
+   `journey versions <key>`. Probes: the interactions collection returns
+   ONE item per key (newest version only) and ignores $pageSize (pages at
+   50) and $filter; the version history is on the STATUS endpoint —
+   /status/key:{key}?AllVersions=true (a bare call 400s with the teaching
+   message "AllVersions=true or VersionNumber required"; VersionNumber=N
+   narrows; unknown version → empty array, which must be hinted rather
+   than mistaken for success). Lifecycle writes stay gated behind `rest`
+   (sendout risk — same posture as round 1).
+2. **Bulk ingest /hub/v1/async** → **CLOSED as specified**: the staged
+   flow (create/stage/complete) does not exist in the platform's discovery
+   index — data (93 methods) and hub (103 methods) audited. The working
+   bulk path was already shipped as `de add` (data/v1/async rows). Hub's
+   /hub/v1/dataeventsasync (row/rowset upsert + bulk delete) documented as
+   passthrough-only — same package-scope caveats as the sync variant.
+3. **SOAP passthrough redesign** → **SHIPPED** as `soap retrieve`. The
+   removed first attempt allowed raw body passthrough (un-reviewable,
+   un-gateable). The redesign keeps only the safe core: Retrieve is the
+   only verb reachable — the request is built from structured flags by
+   the shared soap package, so writes are inexpressible and the command
+   needs no gate; --props required (no accidental full pulls);
+   equals-only repeatable filters; loud caps; property typos surface the
+   platform's teaching error pointed at the describe catalog. Wire
+   assertions lock the RetrieveRequest-only shape.
+
+Also genericized two live-instance numbers (subscriber id, send job id)
+that had leaked into test fixtures pre-v1.0.0 — replaced with clearly
+fake values.
+
+Round-5 verdict: 2 shipped, 1 closed-by-probe, 0 rejected.
+Lesson repeated from round 4: the discovery index is the cheapest way to
+correct a roadmap guess before a line of code is written.

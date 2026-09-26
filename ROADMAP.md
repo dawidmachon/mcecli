@@ -5,8 +5,11 @@ This document covers what's coming next.
 
 ## v1.1 (next release)
 
-- [ ] journey version modeling — journeys have versions; surface
-      list/count/compare instead of raw REST + client-side grouping
+- [x] journey version modeling — shipped as `journey list` +
+      `journey versions <key>`: curated collection read plus the FULL
+      version history from the status endpoint (AllVersions=true /
+      VersionNumber=N, probed live); lifecycle writes stay gated behind
+      rest (sendout risk)
 - [x] `de list` default output curation — lean default projection
       (name/key/rowCount), `--full` for complete objects; request wire
       unchanged
@@ -16,9 +19,13 @@ This document covers what's coming next.
       /messaging/v1/jobs/{id}/stats/sends (jobId = dv-sent SendID)
 - [x] `query update` polish — `--diff` dry run shows current vs proposed
       before applying (read-only, no PATCH on the wire)
-- [ ] bulk ingest for very large loads (`/hub/v1/async` flow)
-- [ ] SOAP passthrough redesign — a safe generic SOAP command (the first
-      attempt was removed; needs a clean design)
+- [x] bulk ingest — CLOSED as specified: /hub/v1/async (create/stage/
+      complete) does not exist in discovery (data + hub audited); the
+      working bulk path was already shipped as `de add`; hub's
+      /hub/v1/dataeventsasync documented as passthrough-only (scope)
+- [x] SOAP passthrough redesign — shipped as `soap retrieve`: Retrieve
+      is the only verb reachable (structured flags, no body passthrough),
+      --props required, equals-only filters, read-only tier
 
 ## Ideas (unscheduled)
 
