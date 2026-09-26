@@ -399,8 +399,8 @@ func TestBUDiscover(t *testing.T) {
 		t.Fatal(err)
 	}
 	bus := cfg.Profiles["test"].BUs
-	if bus["east_eu"] == nil || bus["east_eu"].MID != "222333444" {
-		t.Fatalf("east_eu must be imported: %v", bus)
+	if bus["east_region"] == nil || bus["east_region"].MID != "222333444" {
+		t.Fatalf("east_region must be imported: %v", bus)
 	}
 	if bus["parent"].MID != "111" || bus["region"].MID != "222" {
 		t.Fatalf("existing entries must be untouched: %v", bus)

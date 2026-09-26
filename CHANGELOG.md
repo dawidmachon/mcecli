@@ -116,7 +116,7 @@ Ships every capability below through the v1.0.0 tag.
 - `folders --type T` — DataFolder reads → categoryId discovery
   (ContentType filter works server-side)
 - `api --search <keyword>` — cross-section discovery search
-- `query list --search/--limit/--text` — kill the many-row firehose;
+- `query list --search/--limit/--text` — kill the hundreds-of-rows firehose;
   queryText previews on demand
 - `de list` surfaces when the server ignores $pageSize
 
