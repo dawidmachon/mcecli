@@ -3,7 +3,7 @@
 Public releases and the full feature history live in [CHANGELOG.md](CHANGELOG.md).
 This document covers what's coming next.
 
-## v1.1 — shipped (2026-09-26)
+## v1.2 — shipped (2026-09-26)
 
 All six planned items plus the completeness/quality batch shipped.
 

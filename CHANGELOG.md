@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0 — released (2026-09-26, local test build)
+## v1.2.0 — released (2026-09-26, local test build)
 
 ### Added (agent field-testing round 3 — post-v1.0.0)
 - `de list --all` — full DE inventory of the current BU via ONE SOAP call
