@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -165,5 +166,171 @@ func TestQueryValidate(t *testing.T) {
 	d := e["data"].(map[string]any)
 	if d["queryValid"] != false || d["errors"] == nil {
 		t.Fatalf("validate result wrong: %v", e)
+	}
+}
+
+// --- query update: --diff dry run (v1.1) + PATCH wire assertions (gap fix:
+// query update shipped in round 2 without any test coverage) ---
+
+type updateFake struct {
+	patchBodies []string
+	patchCalled bool
+}
+
+func queryUpdateRoutes(u *updateFake) func(*http.ServeMux) {
+	return func(mux *http.ServeMux) {
+		mux.HandleFunc("/automation/v1/queries", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"count":1,"items":[{"key":"K1","queryDefinitionId":"qid-9"}]}`))
+		})
+		mux.HandleFunc("/automation/v1/queries/qid-9", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(`{"key":"K1","name":"K1","queryText":"SELECT 1","categoryId":5,"targetKey":"T1","targetUpdateTypeId":0}`))
+			case http.MethodPatch:
+				u.patchCalled = true
+				b := make([]byte, 4096)
+				n, _ := r.Body.Read(b)
+				u.patchBodies = append(u.patchBodies, string(b[:n]))
+				_, _ = w.Write([]byte(`{"key":"K1","queryText":"SELECT 2","categoryId":6,"targetKey":"T1","targetUpdateTypeId":0}`))
+			default:
+				t := &testing.T{}
+				t.Errorf("unexpected method %s", r.Method)
+			}
+		})
+	}
+}
+
+func TestQueryUpdateDiffShowsChanges(t *testing.T) {
+	u := &updateFake{}
+	fakeSFMC(t, queryUpdateRoutes(u))
+	code, out, _ := run(t, "query", "update", "K1", "--text", "SELECT 2", "--category", "6", "--diff")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	if u.patchCalled {
+		t.Fatal("--diff must be a dry run: no PATCH may reach the wire")
+	}
+	e := envelope(t, out)
+	changes, _ := e["data"].([]any)
+	if len(changes) != 2 || e["count"].(float64) != 2 {
+		t.Fatalf("expected 2 changes, got %d (%v)", len(changes), e["count"])
+	}
+	c1 := changes[0].(map[string]any)
+	if c1["field"] != "queryText" || c1["from"] != "SELECT 1" || c1["to"] != "SELECT 2" {
+		t.Fatalf("queryText diff wrong: %v", c1)
+	}
+	// numeric compare: server float64(5) vs flag-parsed 6 must differ
+	c2 := changes[1].(map[string]any)
+	if c2["field"] != "categoryId" || c2["from"] != float64(5) || c2["to"] != float64(6) {
+		t.Fatalf("categoryId diff wrong: %v", c2)
+	}
+	h, _ := e["hint"].(string)
+	if !strings.Contains(h, "dry run") || !strings.Contains(h, "--write --confirm") {
+		t.Fatalf("hint must offer the apply path: %q", h)
+	}
+}
+
+func TestQueryUpdateDiffNoChanges(t *testing.T) {
+	u := &updateFake{}
+	fakeSFMC(t, queryUpdateRoutes(u))
+	code, out, _ := run(t, "query", "update", "K1", "--text", "SELECT 1", "--diff")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	e := envelope(t, out)
+	if n, _ := e["count"].(float64); n != 0 { // count 0 is omitempty → absent
+		t.Fatalf("identical text must diff to 0 changes: %v", e["count"])
+	}
+	if h, _ := e["hint"].(string); !strings.Contains(h, "no differences") {
+		t.Fatalf("hint must say there is nothing to do: %q", h)
+	}
+}
+
+func TestQueryUpdateDiffRefusesWrite(t *testing.T) {
+	u := &updateFake{}
+	fakeSFMC(t, queryUpdateRoutes(u))
+	code, out, _ := run(t, "query", "update", "K1", "--text", "SELECT 2", "--diff", "--write", "--confirm")
+	if code != exitUsage {
+		t.Fatalf("--diff + --write must be a usage error, got %d", code)
+	}
+	if u.patchCalled {
+		t.Fatal("refused combination must not write")
+	}
+	e := envelope(t, out)
+	if msg, _ := e["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "cannot be combined") {
+		t.Fatalf("error must name the conflict: %v", e["error"])
+	}
+}
+
+func TestQueryUpdateStillRequiresGate(t *testing.T) {
+	u := &updateFake{}
+	fakeSFMC(t, queryUpdateRoutes(u))
+	code, out, _ := run(t, "query", "update", "K1", "--text", "SELECT 2")
+	if code != exitUsage {
+		t.Fatalf("expected usage exit 2, got %d out=%s", code, out)
+	}
+	if u.patchCalled {
+		t.Fatal("ungated update must not write")
+	}
+}
+
+func TestQueryUpdatePatchWireAssertion(t *testing.T) {
+	u := &updateFake{}
+	fakeSFMC(t, queryUpdateRoutes(u))
+	code, out, _ := run(t, "query", "update", "K1", "--text", "SELECT 2", "--category", "6", "--write", "--confirm")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	if len(u.patchBodies) != 1 {
+		t.Fatalf("expected exactly one PATCH, got %d", len(u.patchBodies))
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(u.patchBodies[0]), &body); err != nil {
+		t.Fatalf("PATCH body not JSON: %v", err)
+	}
+	if body["queryText"] != "SELECT 2" || body["categoryId"] != float64(6) {
+		t.Fatalf("PATCH body must carry the curated field names: %v", body)
+	}
+	if _, has := body["name"]; has {
+		t.Fatalf("only provided fields may be sent: %v", body)
+	}
+}
+
+func TestQueryUpdateRejectsUnknownUpdateMode(t *testing.T) {
+	u := &updateFake{}
+	fakeSFMC(t, queryUpdateRoutes(u))
+	code, out, _ := run(t, "query", "update", "K1", "--update-mode", "bogus", "--write", "--confirm")
+	if code != exitUsage {
+		t.Fatalf("unknown --update-mode must be a usage error, got %d", code)
+	}
+	if u.patchCalled {
+		t.Fatal("unknown --update-mode must not reach the wire (no silently-ignored flags)")
+	}
+	if h, _ := envelope(t, out)["hint"].(string); !strings.Contains(h, "overwrite") {
+		t.Fatalf("hint must state the valid values: %q", h)
+	}
+}
+
+func TestQueryUpdateDiffFailsLoudOnBadFetch(t *testing.T) {
+	fakeSFMC(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("/automation/v1/queries", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"count":1,"items":[{"key":"K1","queryDefinitionId":"qid-404"}]}`))
+		})
+		mux.HandleFunc("/automation/v1/queries/qid-404", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"query definition deleted"}`))
+		})
+	})
+	code, out, _ := run(t, "query", "update", "K1", "--text", "SELECT 2", "--diff")
+	if code != exitAPI {
+		t.Fatalf("expected API exit 1, got %d", code)
+	}
+	e := envelope(t, out)
+	if msg, _ := e["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "could not fetch") {
+		t.Fatalf("error must say the fetch failed: %v", e["error"])
+	}
+	// a failed fetch must NOT be diffed as three bogus "would set" changes
+	if n, _ := e["count"].(float64); n != 0 {
+		t.Fatalf("no fabricated changes allowed, got %v", e["count"])
 	}
 }

@@ -1,6 +1,50 @@
 # Changelog
 
-## Unreleased (v0.2.1)
+## Unreleased (v1.1.0)
+
+### Added (agent field-testing round 3 — post-v1.0.0)
+- `de list --all` — full DE inventory of the current BU via ONE SOAP call
+  (was: dozens of 25-row search pages); `--category` filters server-side,
+  `--search` client-side, name-sorted; `--limit` caps LOUDLY. Platform fact
+  recorded: RowCount is not retrievable via SOAP on this object
+- `auto health` now returns the FULL estate-wide report by default (it
+  arrives as one response); `--limit` is an opt-in cap that is loudly
+  hinted when it truncates; CSV-string counters coerced to JSON numbers
+- `de list` fail-fast with the TRUE contract when `--search` is missing
+  (the platform requires $search even alongside categoryId — AND, not OR);
+  usage scope labels on `auto list` (BU context) vs `auto health` (estate)
+- query hints now point to `query create`/`get`/`update` (was: raw rest)
+
+### Added (v1.1 roadmap batch)
+- `de list` default output curation — lean default projection
+  (name/key/rowCount); `--full` for complete raw objects; `--fields`
+  overrides both (`--full` + `--fields` is a usage error). Request wire
+  unchanged — output-only curation, wire-asserted
+- `dv recipients <jobId>` — per-recipient send status for one email job
+  (GET /messaging/v1/jobs/{id}/stats/sends; jobId = SendID from
+  `dv sent`); rows flattened to one per send transaction; recipients page
+  at 25 server-side — row caps and scan ceilings are loudly hinted.
+  NOTE: the documented /messaging/v1/emailSends/{jobId} path does not
+  exist (404 live, absent from discovery) — see docs/dev/endpoint-notes.md
+- `query update --diff` — read-only dry run: resolves the key, GETs the
+  current definition and reports field-by-field what the proposed patch
+  would change; sends no PATCH; mutually exclusive with --write/--confirm
+
+### Fixed
+- usage text: `query validate` gate line still claimed --write was
+  required (removed from the gate in v1.0.0)
+- CHANGELOG: the v1.0.0 release section was lost in a history rebuild —
+  restored below
+
+### Tests
+- `query update` PATCH wire assertion added (shipped in round 2 untested)
+
+## v1.0.0 — released (first public release)
+
+Renamed mcx → mcecli (module, binary, MCECLI_* env vars, ~/.mcecli config
+with one-time migration), MPL-2.0 license, public docs (README,
+CONTRIBUTING, ROADMAP), agent-facing SKILL.md embedded in the binary.
+Ships every capability below through the v1.0.0 tag.
 
 ### Added (agent field-testing round 2)
 - `query list --full` — complete queryText in bulk (was: 80-char preview)

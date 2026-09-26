@@ -37,6 +37,8 @@ Commands:
   dv sent|clicks|opens|bounces|unsubs|notsent|send  data-view reads via SOAP
                     event objects (read-only; BEST option for tracking data;
                     server-side filters: --since 7d --send-id N --limit N)
+  dv recipients <jobId>  per-recipient send status for one email job (REST;
+                    jobId = SendID from dv sent; read-only)
   sub <key|email>   subscriber subscription state + list memberships
                     (read-only; answers "why is this person not getting mail?")
   describe [object] SOAP object catalog: verified props + quirks (offline)

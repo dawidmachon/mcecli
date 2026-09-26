@@ -31,6 +31,8 @@ const usageDE = `mcecli de — data extension commands (list/get/rows/dump are r
   mcecli de list  --search NAME [--category ID] [--page N --size N] [--fields f1,f2]
                --search is REQUIRED (no plain listing exists in the API);
                --category NARROWS the search (AND filter, not an alternative).
+               Default output is a LEAN projection (name/key/rowCount);
+               --full returns complete raw objects (--fields overrides both).
   mcecli de list  --all        — FULL DE inventory of the current BU (SOAP,
                one call, no --search needed)
                [--category ID] — server-side folder filter
@@ -90,7 +92,7 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("de list", flag.ContinueOnError)
 	var c common
 	var search, category string
-	var all bool
+	var all, full bool
 	var limit int
 	addCommon(fs, &c)
 	addPaging(fs, &c)
@@ -100,6 +102,7 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&category, "category", "", "category (folder) id instead of --search")
 	fs.BoolVar(&all, "all", false, "full DE inventory of the current BU via SOAP (no --search needed)")
 	fs.IntVar(&limit, "limit", 0, "with --all: cap rows (0 = full — a cap is loudly hinted)")
+	fs.BoolVar(&full, "full", false, "complete raw objects (default is a lean name/key/rowCount projection; --fields overrides both)")
 	help := addHelp(fs)
 	if err := parseCmd(fs, args); err != nil {
 		return exitUsage
@@ -110,7 +113,14 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	}
 	if all {
 		// no silently-ignored flags: paging has no meaning for a one-call
-		// full retrieve, and --limit only exists on this path
+		// full retrieve, --limit only exists on this path, and --full only
+		// curates the REST search path (--all output is already curated)
+		if full {
+			e := output.Fail(0, "--full does not apply to --all (its output is already curated)",
+				"mcecli de list --all [--category ID] [--search STR] [--limit N]")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
 		if c.page > 0 || c.size > 0 {
 			e := output.Fail(0, "--page/--size do not apply to --all (SOAP returns the full inventory in one call)",
 				"mcecli de list --all  (--limit N caps loudly, 0 = full)")
@@ -126,6 +136,12 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	}
 	if limit != 0 {
 		e := output.Fail(0, "--limit applies only to --all", "mcecli de list --all --limit N")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	if full && c.fields != "" {
+		e := output.Fail(0, "--full and --fields are mutually exclusive",
+			"--full for complete objects, or --fields a,b,c to choose columns")
 		_ = output.Print(e, c.pretty, stdout)
 		return exitUsage
 	}
@@ -171,7 +187,17 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	if e.Count == 0 {
 		e.Hint = "no matches in this context — DEs are per-BU: mcecli bu discover shows reachable BUs, mcecli de find <name> searches them all"
 	}
-	e.Data = output.Project(e.Data, splitFields(c.fields))
+	// default output curation (roadmap v1.1): the raw listing carries ~25
+	// properties; agents almost always want the name/key/rowCount triad.
+	// Precedence: --fields wins over --full wins over the lean default.
+	if c.fields != "" {
+		e.Data = output.Project(e.Data, splitFields(c.fields))
+	} else if !full {
+		if e.Hint == "" {
+			e.Hint = "lean default projection (name/key/rowCount) — --full for complete objects, --fields a,b,c to choose columns"
+		}
+		e.Data = output.Project(e.Data, []string{"name", "key", "rowCount"})
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }

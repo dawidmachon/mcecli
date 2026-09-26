@@ -97,7 +97,7 @@ const usageQuery = `mcecli query — run and retrieve SQL-on-platform query resu
                --text "SQL"   (or @file.sql) — required
                --target KEY   target DE key (validated against it)
                [--category N] folder id (optional)
-               --write REQUIRED (POST, though nothing is written)
+               read-only: no --write gate (provably side-effect-free)
   mcecli query create <key>     — create a saved query definition
                --text "SQL|@f.sql" — required
                --target KEY   target DE key — required
@@ -108,6 +108,8 @@ const usageQuery = `mcecli query — run and retrieve SQL-on-platform query resu
   mcecli query get <key>        — full definition incl. queryText
   mcecli query update <key>     — patch [--text|--target|--category|--name|
                --description|--update-mode]  --write --confirm REQUIRED
+               [--diff]       dry run: show current vs proposed, change
+               nothing (read-only; mutually exclusive with --write)
 
 Query API (automation/v1/queries): SFMC executes SQL server-side, writes
 results to a target DE. Read the target DE afterwards with mcecli de rows.
@@ -731,11 +733,14 @@ func queryGet(args []string, stdout, stderr io.Writer) int {
 // Only provided fields are sent. VERIFIED endpoint: PATCH
 // /automation/v1/queries/{queryDefinitionId} (discovery; key must be
 // resolved to qid first — GET /{key} 404s).
+// --diff is a read-only dry run (roadmap v1.1): it GETs the current
+// definition and reports field-by-field what the proposed patch would
+// change, sending no PATCH. Mutually exclusive with --write/--confirm.
 func queryUpdate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("query update", flag.ContinueOnError)
 	var c common
 	var text, target, name, desc, category, updateMode string
-	var write, confirm bool
+	var write, confirm, diff bool
 	addCommon(fs, &c)
 	fs.StringVar(&text, "text", "", "new SQL text, or @file.sql")
 	fs.StringVar(&target, "target", "", "new target DE key")
@@ -745,20 +750,15 @@ func queryUpdate(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&updateMode, "update-mode", "", "overwrite | update")
 	fs.BoolVar(&write, "write", false, "confirm the write")
 	fs.BoolVar(&confirm, "confirm", false, "confirm DANGEROUS operation (changes a saved query)")
+	fs.BoolVar(&diff, "diff", false, "dry run: show what would change (current vs proposed), change nothing")
 	if err := parseCmd(fs, args); err != nil {
 		return exitUsage
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprint(stderr, "usage: mcecli query update <key> [--text …] [--target DE] [--category N] [--name N] --write --confirm\n")
+		fmt.Fprint(stderr, "usage: mcecli query update <key> [--text …] [--target DE] [--category N] [--name N] [--diff] --write --confirm\n")
 		return exitUsage
 	}
 	key := fs.Arg(0)
-	if !write || !confirm {
-		e := output.Fail(0, "refusing query update without --write --confirm",
-			"this permanently changes a saved query — retry with both flags")
-		_ = output.Print(e, c.pretty, stdout)
-		return exitUsage
-	}
 
 	body := map[string]any{}
 	if text != "" {
@@ -792,10 +792,34 @@ func queryUpdate(args []string, stdout, stderr io.Writer) int {
 			body["targetUpdateTypeId"] = 0
 		} else if strings.EqualFold(updateMode, "update") {
 			body["targetUpdateTypeId"] = 1
+		} else {
+			e := output.Fail(0, fmt.Sprintf("unknown --update-mode %q", updateMode),
+				"overwrite (truncate+reload) | update (upsert on PK)")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
 		}
 	}
 	if len(body) == 0 {
 		e := output.Fail(0, "nothing to update", "use --text / --target / --category / --name / --description")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+
+	if diff {
+		// a dry run must stay a dry run — honoring --write here would mean a
+		// silently-ignored flag, so the combination is refused instead
+		if write || confirm {
+			e := output.Fail(0, "--diff is a dry run — it cannot be combined with --write/--confirm",
+				"mcecli query update <key> --diff   to preview | drop --diff to apply")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
+		return queryUpdateDiff(&c, key, body, stdout)
+	}
+
+	if !write || !confirm {
+		e := output.Fail(0, "refusing query update without --write --confirm",
+			"this permanently changes a saved query — retry with both flags (or preview with --diff)")
 		_ = output.Print(e, c.pretty, stdout)
 		return exitUsage
 	}
@@ -836,4 +860,77 @@ func queryUpdate(args []string, stdout, stderr io.Writer) int {
 	e.Hint = "verify: mcecli query get " + key + " — run: mcecli query run " + key + " --write --confirm"
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
+}
+
+// queryUpdateDiff — read-only dry run for query update: resolve key, GET the
+// current definition, report field-by-field what the proposed patch would
+// change. Sends NO PATCH (wire-asserted in tests). No --write gate — same
+// tier as query list/validate.
+func queryUpdateDiff(c *common, key string, body map[string]any, stdout io.Writer) int {
+	s, env, code := newSession(c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	qid, qerr := resolveQueryQID(s, key)
+	if qerr != nil {
+		e := output.Fail(0, qerr.Error(), "mcecli query list to see available queries")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	st, resp, env2, _ := s.call(http.MethodGet, "automation/v1/queries/"+qid, nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	if st < 200 || st > 299 {
+		// diffing against an error body would fabricate "would set" changes —
+		// fail loudly instead
+		msg := strings.TrimSpace(string(resp))
+		if m, ok := parseJSON(resp).(map[string]any); ok {
+			if mstr := str(m, "message"); mstr != "" {
+				msg = mstr
+			}
+		}
+		e := output.Fail(st, "query update --diff could not fetch the current definition: "+msg,
+			"mcecli query get "+key+" — if that fails too, the query may have been deleted")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	current, ok := parseJSON(resp).(map[string]any)
+	if !ok {
+		e := output.Fail(0, "unexpected response shape", "mcecli query get "+key)
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	changes := diffQueryDef(current, body)
+	e := output.OK(200, changes)
+	e.Count = len(changes)
+	if len(changes) == 0 {
+		e.Hint = "dry run — no differences: the current definition already matches; nothing to update"
+	} else {
+		e.Hint = fmt.Sprintf("dry run — nothing changed; %d field(s) would change — apply: mcecli query update %s --write --confirm", len(changes), key)
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
+}
+
+// diffQueryDef compares the proposed patch body against the current
+// definition in the command's canonical field order. Values compare via
+// their %v form so JSON-decoded numbers (float64) match flag-parsed ints.
+// A field absent from the current definition reports from:nil (would be set).
+func diffQueryDef(current, body map[string]any) []map[string]any {
+	changes := []map[string]any{}
+	for _, k := range []string{"queryText", "targetKey", "name", "description", "categoryId", "targetUpdateTypeId"} {
+		proposed, ok := body[k]
+		if !ok {
+			continue
+		}
+		cur, has := current[k]
+		if has && fmt.Sprintf("%v", cur) == fmt.Sprintf("%v", proposed) {
+			continue
+		}
+		changes = append(changes, map[string]any{"field": k, "from": cur, "to": proposed})
+	}
+	return changes
 }

@@ -7,11 +7,15 @@ This document covers what's coming next.
 
 - [ ] journey version modeling — journeys have versions; surface
       list/count/compare instead of raw REST + client-side grouping
-- [ ] `de list` default output curation — lean default projection
-      (name/key/rowCount), full detail on demand
-- [ ] per-recipient send status — `messaging/v1/emailSends/{jobId}`
-- [ ] `query update` polish — diff current definition vs proposed change
-      before applying
+- [x] `de list` default output curation — lean default projection
+      (name/key/rowCount), `--full` for complete objects; request wire
+      unchanged
+- [x] per-recipient send status — shipped as `dv recipients <jobId>`;
+      the documented /messaging/v1/emailSends/{jobId} path does not exist
+      (404 live + absent from discovery) — the real endpoint is
+      /messaging/v1/jobs/{id}/stats/sends (jobId = dv-sent SendID)
+- [x] `query update` polish — `--diff` dry run shows current vs proposed
+      before applying (read-only, no PATCH on the wire)
 - [ ] bulk ingest for very large loads (`/hub/v1/async` flow)
 - [ ] SOAP passthrough redesign — a safe generic SOAP command (the first
       attempt was removed; needs a clean design)

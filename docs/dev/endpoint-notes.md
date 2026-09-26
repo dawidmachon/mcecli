@@ -247,6 +247,9 @@ Currently returns "Not Authorized" with the installed package token (scope gap).
 | GET /messaging/v1/messageSends | VERIFIED | list send definitions; {count,page,items} |
 | POST /messaging/v1/messageSends/send | UNVERIFIED | fire send to recipients; --confirm gated (real people!) |
 | POST /messaging/v1/messageSends | UNVERIFIED | create send definition; --write gated |
+| GET /messaging/v1/jobs/{id}/stats/sends | VERIFIED | per-recipient send status for ONE email job. Items: {subscriberId, stats:[{id, transactionTime, domain}]} — a recipient's stats array carries ONE entry per send transaction (re-sends repeat). jobId namespace == _Sent.SendID (same id answers dv sent --send-id and this path). Server pages ITEMS at 25; $pageSize not honored (echoes default 25); $page works. No email address — subscriberId only. Curated: `dv recipients <jobId>` |
+| GET /messaging/v1/emailSends/{jobId} | NOT AVAILABLE | 404 live with a real job id AND absent from the messaging discovery index — the documented "per-recipient send status" path does not exist on this platform; use jobs/{id}/stats/sends instead |
+| GET /messaging/v1/emailstatstracking/{sends\|clicks\|opens\|unsubscribes}/{jobId} | PARTIAL | sends-kind VERIFIED: [{sendCount, lastSendDateTime, timePosted, jobID}] — send volume over time per job (throttling/batching diagnosis). clicks/opens/unsubscribes kinds 404 on a job with no such events (no-data reads as 404 — indistinguishable from missing endpoint); left passthrough-only, unverified |
 
 ## Assets
 

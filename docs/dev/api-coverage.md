@@ -25,7 +25,8 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 | /interaction/v1/interactions/{id} lifecycle (stop/pause/publish/event) | ❌ | gated writes — deferred (sendout risk) |
 | /automation/v1/automations (list/detail/healthreport) | auto list/detail/health | ✅ (start/stop stay gated via rest) |
 | /messaging/v1/messageSends (list) | rest | ✅ (paging sane; known platform quirk n/r) |
-| /messaging/v1/emailSends (per-recipient send status) | ❌ | 🔲 — P2 |
+| /messaging/v1/jobs/{id}/stats/sends (per-recipient send status) | dv recipients | ✅ (jobId == dv-sent SendID; items paged at 25, $pageSize n/r; 404 = no stats for job) |
+| /messaging/v1/emailstatstracking/sends/{jobId} | rest | ✅ verified shape, passthrough-only (volume-over-time; low standalone value) |
 | /contacts/v1/schema (+attributeGroups) | bu discover | ✅ (partial) |
 | /contacts/v1/attributeSets deep probing | ❌ | 🔲 — P3 |
 | /hub/v1/dataevents rows (sync insert) | ❌ | 🚫 403 scope gap on the installed package |
@@ -88,8 +89,10 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 8. ✅ DONE: `mcecli esd list|get` (send definitions; SendDefinitionStatus n/r).
    SendSummary verified (SendID filter works, TotalSent only) — kept
    passthrough-only, low standalone value.
-9. 🔲 /messaging/v1/emailSends/{jobId} per-recipient — needs a live jobId
-   from a real send; on demand.
+9. ✅ DONE (v1.1): per-recipient send status — the roadmap's guessed
+   endpoint /messaging/v1/emailSends/{jobId} does NOT exist (404 + absent
+   from discovery); the real path is /messaging/v1/jobs/{id}/stats/sends →
+   curated as `mcecli dv recipients <jobId>`.
 
 **P3 — on demand only**
 10. Extract API bulk flow; /contacts/v1/attributeSets deep probe;

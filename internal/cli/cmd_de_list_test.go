@@ -172,3 +172,106 @@ func TestDeListAllFlagGuards(t *testing.T) {
 		}
 	}
 }
+
+// --- de list REST path: lean default projection (roadmap v1.1) ---
+// Default output is curated to name/key/rowCount; --full returns raw
+// objects; --fields picks columns. Default-behavior change → wire assertion
+// guarantees the REQUEST is unchanged ($search still reaches the platform).
+
+func deListRESTRoute(t *testing.T, captured *[]string) func(*http.ServeMux) {
+	return func(mux *http.ServeMux) {
+		mux.HandleFunc("/data/v1/customObjects", func(w http.ResponseWriter, r *http.Request) {
+			*captured = append(*captured, r.URL.RawQuery)
+			_, _ = w.Write([]byte(`{"count":7,"page":1,"pageSize":25,"items":[{` +
+				`"name":"MyDE","key":"MyDE_Key","rowCount":42,"categoryId":8001,` +
+				`"createdDate":"2026-01-01T00:00:00","description":"d","isActive":true,` +
+				`"dataRetentionProperties":{"rule":"delete"}}]}`))
+		})
+	}
+}
+
+func TestDeListDefaultOutputIsLean(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, deListRESTRoute(t, &captured))
+	code, out, _ := run(t, "de", "list", "--search", "my")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	// wire assertion: curation is output-only — $search still reaches the wire
+	if len(captured) != 1 || !strings.Contains(captured[0], "%24search=my") {
+		t.Fatalf("$search must still be sent: %q", captured)
+	}
+	e := envelope(t, out)
+	items, _ := e["data"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(items))
+	}
+	row := items[0].(map[string]any)
+	if len(row) != 3 || row["name"] != "MyDE" || row["key"] != "MyDE_Key" || row["rowCount"] != float64(42) {
+		t.Fatalf("lean default must be exactly name/key/rowCount, got: %v", row)
+	}
+	if h, _ := e["hint"].(string); !strings.Contains(h, "lean default projection") || !strings.Contains(h, "--full") {
+		t.Fatalf("hint must offer the escape hatches: %q", h)
+	}
+}
+
+func TestDeListFullReturnsRawObjects(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, deListRESTRoute(t, &captured))
+	code, out, _ := run(t, "de", "list", "--search", "my", "--full")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	e := envelope(t, out)
+	row := e["data"].([]any)[0].(map[string]any)
+	for _, k := range []string{"name", "key", "rowCount", "categoryId", "createdDate", "description", "isActive", "dataRetentionProperties"} {
+		if _, ok := row[k]; !ok {
+			t.Fatalf("--full must keep %q", k)
+		}
+	}
+}
+
+func TestDeListFieldsOverridesLean(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, deListRESTRoute(t, &captured))
+	code, out, _ := run(t, "de", "list", "--search", "my", "--fields", "key,createdDate")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	e := envelope(t, out)
+	row := e["data"].([]any)[0].(map[string]any)
+	if len(row) != 2 || row["key"] != "MyDE_Key" || row["createdDate"] != "2026-01-01T00:00:00" {
+		t.Fatalf("--fields must override the lean default: %v", row)
+	}
+}
+
+func TestDeListFullAndFieldsAreExclusive(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, deListRESTRoute(t, &captured))
+	code, out, _ := run(t, "de", "list", "--search", "my", "--full", "--fields", "key")
+	if code != exitUsage {
+		t.Fatalf("expected usage exit 2, got %d", code)
+	}
+	e := envelope(t, out)
+	if msg, _ := e["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "mutually exclusive") {
+		t.Fatalf("error must name the conflict: %v", e["error"])
+	}
+	if len(captured) != 0 {
+		t.Fatalf("conflicting flags must not reach the network")
+	}
+}
+
+func TestDeListAllRejectsFull(t *testing.T) {
+	var bodies []string
+	fakeSFMC(t, dvSoapRoute(&bodies, "OK", deListAllResults()))
+	code, out, _ := run(t, "de", "list", "--all", "--full")
+	if code != exitUsage {
+		t.Fatalf("--full is meaningless with --all: expected usage exit 2, got %d", code)
+	}
+	if len(bodies) != 0 {
+		t.Fatalf("usage error must not reach the network")
+	}
+	if h, _ := envelope(t, out)["hint"].(string); !strings.Contains(h, "--all") {
+		t.Fatalf("hint must explain the conflict: %q", h)
+	}
+}

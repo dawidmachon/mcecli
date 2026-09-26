@@ -56,7 +56,8 @@ Per-call override instead of switching: `mcecli --bu <name|MID> de list`
 
     mcecli api data --filter customobject      # EXPLORE the API: discovery-based method index
     mcecli api messaging getMessageSendsCollection   # method detail + ready mcecli rest line
-    mcecli de list --search preference         # $search is required by the API
+    mcecli de list --search preference         # $search is required by the API; lean default output (name/key/rowCount)
+    mcecli de list --search preference --full  # complete raw objects (--fields picks columns; overrides lean default)
     mcecli de list --all                       # FULL DE inventory of the current BU (SOAP, one call; --category filters server-side)
     mcecli de get <deKey>                      # definition + field schema
     mcecli de rows <deKey> --fields email --size 50
@@ -147,6 +148,10 @@ Verified write patterns on this platform:
   `mcecli dv sent|clicks|opens|bounces|unsubs|notsent` (SOAP event objects,
   read-only, server-side filters). `mcecli dv send <SendID>` gives the _Job
   metadata (EmailName/Subject/FromName) — the _Sent JOIN _Job pattern.
+- Per-recipient send status for ONE email job: `mcecli dv recipients <SendID>`
+  (REST job stats; jobId = the SendID from dv sent; one row per send
+  transaction, subscriberId + domain + transactionTime, no address;
+  recipients page at 25 — caps are loudly hinted).
 - Debugging a weird result? MCECLI_REST_DEBUG=<path> / MCECLI_SOAP_DEBUG=<path>
   dump the last raw request (auth redacted).
 
@@ -168,6 +173,7 @@ Verified write patterns on this platform:
 | create a data extension | `mcecli de create <name> --field "Col:Text(100)" --field "Created:Date" --category <folderID> --write` — builds the COMPLETE field object (raw endpoint rejects incomplete ones one property at a time) | folder ids: `mcecli folders --type dataextension` |
 | create a saved query | `mcecli query create <key> --text "SQL" --target DE --category <id> --write --confirm` | field is queryText; validate first: `mcecli query validate` (side-effect-free, no gate) |
 | inspect a saved query | `mcecli query get <key>` — full definition incl. queryText (GET /{id} 404s on the key — resolved internally) | |
+| change a saved query safely | `mcecli query update <key> --text/--target/--category/--name --diff` — DRY RUN: shows current vs proposed, writes nothing; add `--write --confirm` to apply | |
 | list platform users | `mcecli users list --search X` — all platform users, client-side search | |
 | find folder ids | `mcecli folders --type dataextension|queryactivity` — ContentType server-side filter works | |
 | find endpoints by keyword | `mcecli api --search <keyword>` — cross-section discovery search | |
@@ -176,7 +182,7 @@ Verified write patterns on this platform:
 | automations ops (what is failing?) | `mcecli auto health` (30-day success/error per automation; ESTATE-WIDE — all BUs under the enterprise account, unlike auto list which is context-scoped; full report by default, --limit caps loudly) → `mcecli auto list --search` → `mcecli auto <key>` (steps) — VERIFIED live | start/stop writes stay gated |
 | SOAP object properties | `mcecli describe <object>` — embedded catalog of live-verified properties (SOAP Describe is not usable on every org) | offline, zero cost |
 | subscriber state / list memberships | `mcecli sub <key|email>` — VERIFIED live: Status (Active/Bounced/Unsubscribed/Held) + ListSubscriber join; same address can exist on multiple MIDs → command surfaces ambiguous_matches, re-run with exact SubscriberKey | use `mcecli dv bounces --subscriber-key K` for bounce reasons |
-| data views (_Click, _Sent, _Open, …) | `mcecli dv sent|clicks|opens|bounces|unsubs|notsent` — VERIFIED live (1 SOAP call, server-side --since/--send-id filters); `mcecli dv send <SendID>` = _Job metadata | REST rowset NEVER reaches data views (404); use `mcecli query run` ONLY for SQL-only needs (aggregates, joins, _Subscribers, bulk) |
+| data views (_Click, _Sent, _Open, …) | `mcecli dv sent|clicks|opens|bounces|unsubs|notsent` — VERIFIED live (1 SOAP call, server-side --since/--send-id filters); `mcecli dv send <SendID>` = _Job metadata; `mcecli dv recipients <SendID>` = per-recipient send status (REST) | REST rowset NEVER reaches data views (404); use `mcecli query run` ONLY for SQL-only needs (aggregates, joins, _Subscribers, bulk) |
 | SQL syntax reference | docs/sql-reference.md — 64-construct battery validated live via query validate (2026-09-17): joins/UNION/subqueries/EXISTS/ROW_NUMBER work; single statement only, no DECLARE/INTO/EXEC | always mcecli query validate before create |
 | SQL on platform | `mcecli query list` / `mcecli query run <key> --write --confirm` / `mcecli query validate --text "SQL" --target DE --write` — VERIFIED end-to-end (validate pre-checks SQL: field is Text, NOT queryText) | key→GUID resolved across ALL pages |
 | millions of rows / imports | Bulk Data Ingest API or ImportUserBehavior — OUT of mcecli scope; tell the user | wrong tool otherwise |

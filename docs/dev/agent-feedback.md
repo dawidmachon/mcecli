@@ -83,3 +83,47 @@ Round-3 verdict: 5 shipped, 0 rejected.
 Guiding lesson recorded: **defaults must not silently decide correctness
 questions, and a hint must never state a contract the platform doesn't
 honor.**
+
+---
+
+## Round 4 — v1.1 roadmap batch (2026-09-25)
+
+First roadmap-driven iteration after round 3. Each v1.1 item was probed
+live before implementation; two roadmap assumptions were corrected by the
+platform itself:
+
+1. **Per-recipient send status** — the roadmap guessed
+   /messaging/v1/emailSends/{jobId}; that path 404s live with a real job id
+   AND is absent from the messaging discovery index. The real path is
+   GET /messaging/v1/jobs/{id}/stats/sends: items are
+   {subscriberId, stats:[{id, transactionTime, domain}]}, a recipient's
+   stats array carries one entry per send transaction, and the jobId
+   namespace equals the _Sent.SendID (same id answers `dv sent --send-id`).
+   Server pages items at 25 and ignores $pageSize.
+   → **SHIPPED** as `dv recipients <jobId>`: flattened rows (one per
+   transaction), $page walk until the server count is consumed, row caps
+   and scan ceilings LOUDLY hinted (round-3 rule). The related
+   emailstatstracking over-time family was probed: sends-kind verified,
+   other kinds 404 on no-data (indistinguishable from missing) — left
+   passthrough-only, **DEFERRED** until a real use shows up.
+2. **`de list` default output curation** (roadmap) — the raw listing
+   carries ~25 properties; audits almost always want the name/key/rowCount
+   triad. → **SHIPPED**: lean default projection, `--full` for raw objects,
+   `--fields` overrides both (combining --full and --fields is a usage
+   error, not a silent precedence). Output-only change — the request wire
+   is asserted unchanged.
+3. **`query update` polish** (roadmap) → **SHIPPED** as `--diff`: a
+   read-only dry run that GETs the current definition and reports
+   field-by-field from→to before anything is patched. Mutually exclusive
+   with --write/--confirm (a dry run that also wrote would be a
+   silently-ignored flag). Also closed a test gap: query update shipped in
+   round 2 with NO PATCH wire assertion — added, plus a gate re-check.
+4. **Docs debt found while iterating** — the CHANGELOG lost its v1.0.0
+   section in the history rebuild (top section still said "Unreleased
+   (v0.2.1)"), and the usage text still claimed `query validate` needs
+   --write (gate removed in v1.0.0). → **SHIPPED** (both fixed).
+
+Round-4 verdict: 4 shipped, 1 deferred (tracking family), 0 rejected.
+Lesson reinforced: probe the endpoint before designing the command — the
+roadmap's endpoint guess was wrong, and the discovery index settled it in
+one call.
