@@ -399,8 +399,8 @@ func TestBUDiscover(t *testing.T) {
 		t.Fatal(err)
 	}
 	bus := cfg.Profiles["test"].BUs
-	if bus["east_eu"] == nil || bus["east_eu"].MID != "222333444" {
-		t.Fatalf("east_eu must be imported: %v", bus)
+	if bus["east_region"] == nil || bus["east_region"].MID != "222333444" {
+		t.Fatalf("east_region must be imported: %v", bus)
 	}
 	if bus["parent"].MID != "111" || bus["region"].MID != "222" {
 		t.Fatalf("existing entries must be untouched: %v", bus)
@@ -649,10 +649,14 @@ func TestDeListCategoryParamReachesWire(t *testing.T) {
 			if r.URL.Query().Get("categoryId") == "" {
 				t.Errorf("--category must map to categoryId param, got %s", r.URL.RawQuery)
 			}
+			// round 3: categoryId is an AND-filter — $search must ride along
+			if r.URL.Query().Get("$search") == "" {
+				t.Errorf("$search is required even with categoryId, got %s", r.URL.RawQuery)
+			}
 			_, _ = w.Write([]byte(`{"count":0,"items":[]}`))
 		})
 	})
-	if code, out, _ := run(t, "de", "list", "--category", "9387"); code != exitOK {
+	if code, out, _ := run(t, "de", "list", "--search", "x", "--category", "9387"); code != exitOK {
 		t.Fatalf("exit=%d out=%s", code, out)
 	}
 }

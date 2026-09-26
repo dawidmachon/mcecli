@@ -1,6 +1,96 @@
 # Changelog
 
-## Unreleased (v0.2.1)
+## Unreleased (v1.1.0)
+
+### Added (agent field-testing round 3 — post-v1.0.0)
+- `de list --all` — full DE inventory of the current BU via ONE SOAP call
+  (was: dozens of 25-row search pages); `--category` filters server-side,
+  `--search` client-side, name-sorted; `--limit` caps LOUDLY. Platform fact
+  recorded: RowCount is not retrievable via SOAP on this object
+- `auto health` now returns the FULL estate-wide report by default (it
+  arrives as one response); `--limit` is an opt-in cap that is loudly
+  hinted when it truncates; CSV-string counters coerced to JSON numbers
+- `de list` fail-fast with the TRUE contract when `--search` is missing
+  (the platform requires $search even alongside categoryId — AND, not OR);
+  usage scope labels on `auto list` (BU context) vs `auto health` (estate)
+- query hints now point to `query create`/`get`/`update` (was: raw rest)
+
+### Added (completeness & quality batch — gap audit)
+- `journey stats <key>` — population + activity summary across ALL
+  versions (probed: the status endpoint's id is stable across versions;
+  GET /{id}/summary → active activity counts; POST
+  /journeyhistory/summary {"objectId"} → totalContactCount/waiting/
+  success/error counters). The history POST is a side-effect-free read
+  (validate precedent, no gate; body wire-asserted). journeyhistory
+  search stays passthrough-only — body schema undocumented
+- `de delete <key|name> --write --confirm` — DE lifecycle completeness
+  (counterpart of de create); DELETE /data/v1/customObjects/{id} with
+  key resolution; undo image auto-captured before the delete; journaled
+- `query delete <key> --write --confirm` — saved-query lifecycle
+  completeness; key→qid resolution + undo image + journal, same rails
+- `auth test` now reports token identity (GET /platform/v1/
+  tokenContext → enterprise/organization/user ids; VERIFIED live) —
+  answers "which user is this token?" in multi-profile setups;
+  best-effort: failure never fails auth test
+- `work prune` — local work-cache hygiene (roadmap idea): report-only
+  by default, `--do` deletes entries older than a cutoff (--older-than
+  30m/24h/7d/90d); undo images included (that removes the rollback
+  path — documented); the journal is NEVER touched
+
+### Added (v1.1 roadmap batch)
+- `journey list` / `journey versions <key>` — journey version modeling.
+  PROBED: the collection returns ONE item per key (newest version only;
+  $pageSize and $filter not honored); the FULL version history lives at
+  /interaction/v1/interactions/status/key:{key}?AllVersions=true (a bare
+  call 400s with the teaching message; ?VersionNumber=N narrows; unknown
+  version returns an empty array — hinted, not mistaken for success).
+  list: curated projection + client-side --search; versions: sorted
+  history with per-version status. Lifecycle writes (publish/stop/pause)
+  deliberately stay behind `rest` gates
+- `soap retrieve <ObjectType> --props a,b,c [--filter P=V]` — the SOAP
+  passthrough redesign. Retrieve-only BY CONSTRUCTION: the request is
+  built from structured flags by the shared soap package, so no write
+  verb is expressible (and reads need no gate). --props required (no
+  accidental full pulls); equals-only repeatable filters; loud caps;
+  wrong property names surface the platform teaching error pointed at
+  `mcecli describe`
+- `de list` default output curation — lean default projection
+  (name/key/rowCount); `--full` for complete raw objects; `--fields`
+  overrides both (`--full` + `--fields` is a usage error). Request wire
+  unchanged — output-only curation, wire-asserted
+- `dv recipients <jobId>` — per-recipient send status for one email job
+  (GET /messaging/v1/jobs/{id}/stats/sends; jobId = SendID from
+  `dv sent`); rows flattened to one per send transaction; recipients page
+  at 25 server-side — row caps and scan ceilings are loudly hinted.
+  NOTE: the documented /messaging/v1/emailSends/{jobId} path does not
+  exist (404 live, absent from discovery) — see docs/dev/endpoint-notes.md
+- `query update --diff` — read-only dry run: resolves the key, GETs the
+  current definition and reports field-by-field what the proposed patch
+  would change; sends no PATCH; mutually exclusive with --write/--confirm
+
+### Closed (roadmap corrections)
+- per-recipient send status: /messaging/v1/emailSends/{jobId} does not
+  exist — shipped as `dv recipients` on /messaging/v1/jobs/{id}/stats/sends
+- bulk ingest: the /hub/v1/async staged flow (create/stage/complete) does
+  not exist in discovery (data + hub sections audited); the working bulk
+  path was already shipped as `de add` (data/v1/async rows); the hub
+  analogue /hub/v1/dataeventsasync stays passthrough-only (scope caveats)
+
+### Fixed
+- usage text: `query validate` gate line still claimed --write was
+  required (removed from the gate in v1.0.0)
+- CHANGELOG: the v1.0.0 release section was lost in a history rebuild —
+  restored below
+
+### Tests
+- `query update` PATCH wire assertion added (shipped in round 2 untested)
+
+## v1.0.0 — released (first public release)
+
+Renamed mcx → mcecli (module, binary, MCECLI_* env vars, ~/.mcecli config
+with one-time migration), MPL-2.0 license, public docs (README,
+CONTRIBUTING, ROADMAP), agent-facing SKILL.md embedded in the binary.
+Ships every capability below through the v1.0.0 tag.
 
 ### Added (agent field-testing round 2)
 - `query list --full` — complete queryText in bulk (was: 80-char preview)
@@ -26,7 +116,7 @@
 - `folders --type T` — DataFolder reads → categoryId discovery
   (ContentType filter works server-side)
 - `api --search <keyword>` — cross-section discovery search
-- `query list --search/--limit/--text` — kill the many-row firehose;
+- `query list --search/--limit/--text` — kill the hundreds-of-rows firehose;
   queryText previews on demand
 - `de list` surfaces when the server ignores $pageSize
 

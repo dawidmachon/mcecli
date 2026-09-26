@@ -201,6 +201,7 @@ bulk exports). REST rowset NEVER reaches data views (verified 404).
 | GET /data/v1/customobjectdata/key/{key}/rowset | VERIFIED | $-params; token-based continuation via requestToken; links.next gives next page path |
 | GET /data/v1/customobjectdata/token/{token}/rowset | VERIFIED | continuation; pass --next "data/v1/customobjectdata/token/..." from envelope |
 | GET /data/v1/customobjectdata (bare) | BROKEN | 404 — no bare collection |
+| DELETE /data/v1/customObjects/{id} | DISCOVERY-VERIFIED | deletes the DE object; id (GUID) not key — curated as `mcecli de delete <key> --write --confirm` with an auto-captured undo image (de get before the delete). Destructive: live-fire reserved for owner-approved ops |
 
 ### DE writes
 | Endpoint | Status | Notes |
@@ -211,14 +212,16 @@ bulk exports). REST rowset NEVER reaches data views (verified 404).
 | POST/PUT /customobjectdata/.../rowset | BROKEN | 404 on this host |
 | /hub/v1/dataevents/key:{key}/rows | UNVERIFIED | "Not Authorized" with current token — scope gap, not path gap |
 
-### Bulk Data Ingest (RANKING)
-For millions-of-rows workloads. Flow: create job → stage data → complete → poll status.
-Not implementing full flow yet — ranked note only.
-- `POST /hub/v1/async/dataextensions/key:{key}/create` — create ingest job
-- `POST /hub/v1/async/dataextensions/key:{key}/stage` — upload batches
-- `POST /hub/v1/async/dataextensions/key:{key}/complete` — trigger import
-- `GET /data/v1/async/{id}/status` — poll progress
-- `GET /data/v1/async/{id}/results` — fetch results
+### Bulk Data Ingest (CLOSED v1.1)
+The staged-ingest flow guessed here (create → stage → complete) does NOT
+exist in this platform's discovery index — neither in the data section
+(93 methods audited) nor in hub (103 methods audited). The working bulk
+path is the one already curated as `de add`:
+- PUT/POST /data/v1/async/dataextensions/key:{key}/rows — chunked async
+  upserts (202 + job id; poll /data/v1/async/{id}/status)
+The hub analogue is /hub/v1/dataeventsasync/key:{key}/rowset (bulk rows;
+POST rowset/delete exists too — destructive) — see "DE sync rows" below:
+same package-scope caveats, left passthrough-only.
 
 ### DE sync rows (RANKING)
 `/hub/v1/dataevents/key:{key}/rows` — synchronous insert (immediate, not async).
@@ -228,10 +231,36 @@ Currently returns "Not Authorized" with the installed package token (scope gap).
 
 ## Journeys and Events
 
+Journey VERSION semantics (VERIFIED live, round 5): the collection returns
+ONE item per key (newest version only); each publish bumps `version`. The
+FULL history lives on the status endpoint:
+GET /interaction/v1/interactions/status/key:{key}?AllVersions=true →
+[{id, status, versionNumber}, …] (a bare call 400s with the teaching
+message "AllVersions=true or VersionNumber required"; ?VersionNumber=N
+narrows to one version; an unknown version returns an empty array).
+Older versions are immutable history with their own status (Stopped/…).
+Curated: `mcecli journey list` + `mcecli journey versions <key>`.
+
+Journey PERFORMANCE (VERIFIED live, round 6): the status endpoint's `id`
+is STABLE across versions (journey id, not per-version). Two summaries:
+- GET /interaction/v1/interactions/{id}/summary → {id, activities:
+  [{type, count}]} — ACTIVE activity counts across versions
+- POST /interaction/v1/interactions/journeyhistory/summary body
+  {"objectId": "<journey-id>"} → population counters {total,
+  totalContactCount, waiting, expired, cameOffWait, successCount,
+  errorCount, warningCount}. A READ query despite being a POST (validate
+  precedent — no gate in the curated command; body wire-asserted)
+- POST /interaction/v1/interactions/journeyhistory/search — paged contact
+  history items ({count,page,pageSize:100}); BODY SCHEMA UNDOCUMENTED in
+  discovery ({} works = full scan); left passthrough-only
+Curated: `mcecli journey stats <key>` (resolves key → id → both
+summaries in one envelope).
+
 | Endpoint | Status | Notes |
 |---|---|---|
-| GET /interaction/v1/interactions | VERIFIED | journeys; /interactions (NOT /journeys); {count,page,items} |
-| GET /interaction/v1/interactions/{id} | UNVERIFIED | single journey detail |
+| GET /interaction/v1/interactions | VERIFIED | journeys; /interactions (NOT /journeys); {count,page,items}; newest version only; $pageSize NOT honored (server pages at 50); $filter/name filtering NOT honored — filter client-side |
+| GET /interaction/v1/interactions/status/key:{key} | VERIFIED | version history with ?AllVersions=true or ?VersionNumber=N (see notes above) |
+| GET /interaction/v1/interactions/{id} | UNVERIFIED | single journey detail ({id} = definitionId) |
 | POST /interaction/v1/interactions/stop/{id} | UNVERIFIED | stops running journey; --confirm gated |
 | POST /interaction/v1/interactions/pause/{id} | UNVERIFIED | pauses journey; --confirm gated |
 | POST /interaction/v1/interactions/resume/{id} | UNVERIFIED | resumes journey; --confirm gated |
@@ -247,6 +276,9 @@ Currently returns "Not Authorized" with the installed package token (scope gap).
 | GET /messaging/v1/messageSends | VERIFIED | list send definitions; {count,page,items} |
 | POST /messaging/v1/messageSends/send | UNVERIFIED | fire send to recipients; --confirm gated (real people!) |
 | POST /messaging/v1/messageSends | UNVERIFIED | create send definition; --write gated |
+| GET /messaging/v1/jobs/{id}/stats/sends | VERIFIED | per-recipient send status for ONE email job. Items: {subscriberId, stats:[{id, transactionTime, domain}]} — a recipient's stats array carries ONE entry per send transaction (re-sends repeat). jobId namespace == _Sent.SendID (same id answers dv sent --send-id and this path). Server pages ITEMS at 25; $pageSize not honored (echoes default 25); $page works. No email address — subscriberId only. Curated: `dv recipients <jobId>` |
+| GET /messaging/v1/emailSends/{jobId} | NOT AVAILABLE | 404 live with a real job id AND absent from the messaging discovery index — the documented "per-recipient send status" path does not exist on this platform; use jobs/{id}/stats/sends instead |
+| GET /messaging/v1/emailstatstracking/{sends\|clicks\|opens\|unsubscribes}/{jobId} | PARTIAL | sends-kind VERIFIED: [{sendCount, lastSendDateTime, timePosted, jobID}] — send volume over time per job (throttling/batching diagnosis). clicks/opens/unsubscribes kinds 404 on a job with no such events (no-data reads as 404 — indistinguishable from missing endpoint); left passthrough-only, unverified |
 
 ## Assets
 
@@ -347,6 +379,7 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
 | ESD context anomaly | RESOLVED 2026-09-17 | same cause as TSD anomaly: mcecli session was on prod-read while probes used dev-full — DEV vs PROD estates, not request shape |
 | GET /platform/v1/ens-callbacks | VERIFIED | registered callbacks → mcecli ens callbacks |
 | GET /platform/v1/ens-subscriptions-by-cb/{id} | VERIFIED | subscribed to SendEvents.AutomationInstanceStarted + AutomationInstanceErrored → mcecli ens subs |
+| GET /platform/v1/tokenContext | VERIFIED | {enterprise:{id}, organization:{id}, user:{id}} behind the CURRENT token — answers "which user/org is this token?" in multi-profile setups; surfaced in mcecli auth test (best-effort, failure never fails the command) |
 | Retrieve AutomationInstance | 🚫 BLOCKED | needs AutomationID filter (unfiltered → PartnerProperties error); even with valid recent id → "No rows were found" — instances live on child-BU contexts unreachable with current packages. Healthreport (REST) is the working ops view |
 | Retrieve SendSummary | VERIFIED | SendID filter WORKS (1 exact row); TotalSent retrievable; Delivered/Bounces NOT — TotalSent-only value, kept passthrough-only |
 
@@ -360,3 +393,32 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
 | targetUpdateTypeId | VERIFIED | 0=Overwrite (targetUpdateTypeName confirms); 1 seen only as "Update" in docs — unverified live |
 | SOAP Retrieve AccountUser | VERIFIED | ID/UserID/Name/Email/ActiveFlag/DefaultBusinessUnit retrievable; **Delete NOT retrievable**; no server filter → client-side search; users parent ctx |
 | SOAP Retrieve DataFolder | VERIFIED | ContentType server-side filter WORKS (queryactivity → folder list, dataextension → 34); ParentFolderID NOT retrievable |
+
+## customObjects listing + healthreport semantics — agent-feedback round 3 (2026-09-25)
+
+- data/v1/customObjects: **$search is REQUIRED even when categoryId is
+  supplied** (VERIFIED via agent field test: categoryId alone → platform
+  400 "$search is a required parameter"). categoryId is an AND-narrowing
+  filter, NOT an alternative to $search. de list now fails fast
+  client-side with the truthful contract.
+- $pageSize is ignored by this endpoint; server pages are capped at 25
+  rows (both already surfaced by de list transparency hints).
+- rowCount on customObjects items: platform-reported; semantics UNVERIFIED
+  (fresh vs cached, per-BU vs shared) — treat as approximate. For exact
+  counts use the rowset (`de rows`) or a platform-side query.
+- automation/v1/automations/healthreport: **ESTATE-WIDE** — rows cover all
+  BUs under the enterprise account, not just the context BU (unlike
+  automation/v1/automations list, which is context-scoped). Arrives as ONE
+  CSV response — no server-side paging; any truncation is client-side
+  (auto health default is now full-scan).
+- Full-DE enumeration — VERIFIED 2026-09-25 via SOAP DataExtension Retrieve
+  (shipped as `de list --all`): Name/CustomerKey/CategoryID/CreatedDate/
+  IsSendable all retrievable; a full BU inventory returns in ONE round trip
+  (~sub-second for a four-digit DE count); CustomerKeys are unique.
+  NOT retrievable on this object: RowCount ("do not match with the fields
+  of DataExtension retrieve" — the REST listing's rowCount has no SOAP
+  counterpart). CategoryID `equals` filters SERVER-side (bogus value →
+  0 rows, status OK). Scope: a BU-context token returns that BU's DEs —
+  do NOT set QueryAllAccounts for this path. CAVEAT: soap.Opts.MaxRows
+  does not trim a single-page response (it only stops continuation) —
+  client-side caps must trim in the command (`--limit` does, loudly).

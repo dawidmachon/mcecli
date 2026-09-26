@@ -5,23 +5,41 @@ This document covers what's coming next.
 
 ## v1.1 (next release)
 
-- [ ] journey version modeling — journeys have versions; surface
-      list/count/compare instead of raw REST + client-side grouping
-- [ ] `de list` default output curation — lean default projection
-      (name/key/rowCount), full detail on demand
-- [ ] per-recipient send status — `messaging/v1/emailSends/{jobId}`
-- [ ] `query update` polish — diff current definition vs proposed change
-      before applying
-- [ ] bulk ingest for very large loads (`/hub/v1/async` flow)
-- [ ] SOAP passthrough redesign — a safe generic SOAP command (the first
-      attempt was removed; needs a clean design)
+- [x] journey version modeling — shipped as `journey list` +
+      `journey versions <key>`: curated collection read plus the FULL
+      version history from the status endpoint (AllVersions=true /
+      VersionNumber=N, probed live); lifecycle writes stay gated behind
+      rest (sendout risk)
+- [x] `de list` default output curation — lean default projection
+      (name/key/rowCount), `--full` for complete objects; request wire
+      unchanged
+- [x] per-recipient send status — shipped as `dv recipients <jobId>`;
+      the documented /messaging/v1/emailSends/{jobId} path does not exist
+      (404 live + absent from discovery) — the real endpoint is
+      /messaging/v1/jobs/{id}/stats/sends (jobId = dv-sent SendID)
+- [x] `query update` polish — `--diff` dry run shows current vs proposed
+      before applying (read-only, no PATCH on the wire)
+- [x] bulk ingest — CLOSED as specified: /hub/v1/async (create/stage/
+      complete) does not exist in discovery (data + hub audited); the
+      working bulk path was already shipped as `de add`; hub's
+      /hub/v1/dataeventsasync documented as passthrough-only (scope)
+- [x] SOAP passthrough redesign — shipped as `soap retrieve`: Retrieve
+      is the only verb reachable (structured flags, no body passthrough),
+      --props required, equals-only filters, read-only tier
+- [x] journey stats — population + activity summary across ALL versions
+      (gap-audit find; history POST is a wire-asserted read-query)
+- [x] de delete / query delete — lifecycle completeness for the curated
+      creators; gated, undo-imaged, journaled
+- [x] work-cache pruning — `work prune` (report default, --do deletes,
+      journal never touched)
+- [x] token identity — auth test surfaces tokenContext ids
 
 ## Ideas (unscheduled)
 
 - `de find --all-profiles` — cross-profile visibility map
-- work-cache pruning (TTL-based cleanup of `~/.mcecli/work/`)
 - journey create/publish/stop — needs careful sendout-safety design;
   deliberately not exposed yet
+- `work prune` SHIPPED in v1.1 (completeness batch)
 
 ## Known platform limitations (not mcecli bugs)
 

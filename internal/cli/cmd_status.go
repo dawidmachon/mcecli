@@ -5,14 +5,17 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/dawidmachon/mcecli/internal/auth"
 	"github.com/dawidmachon/mcecli/internal/config"
+	"github.com/dawidmachon/mcecli/internal/httpc"
 	"github.com/dawidmachon/mcecli/internal/output"
 )
 
@@ -114,7 +117,7 @@ func cmdAuth(args []string, stdout, stderr io.Writer) int {
 			_ = output.Print(output.Fail(0, err.Error(), hint), c.pretty, stdout)
 			return exitAPI
 		}
-		_ = output.Print(output.OK(200, map[string]any{
+		data := map[string]any{
 			"profile":           res.Name,
 			"bu":                res.BUName,
 			"mid":               res.MID,
@@ -124,7 +127,26 @@ func cmdAuth(args []string, stdout, stderr io.Writer) int {
 			"rest_instance_url": tok.RestInstanceURL,
 			"soap_instance_url": tok.SoapInstanceURL,
 			"cached":            !c.refresh,
-		}), c.pretty, stdout)
+		}
+		// identity context (best-effort, VERIFIED live: enterprise/organization/
+		// user ids behind the token) — answers "WHICH user is this token?" in
+		// multi-profile setups; a failure here never fails auth test
+		if r, rerr := httpc.Do(context.Background(), http.MethodGet,
+			strings.TrimSuffix(tok.RestInstanceURL, "/")+"/platform/v1/tokenContext",
+			tok.AccessToken, nil, nil); rerr == nil && r.Status < 400 {
+			if m, ok := parseJSON(r.Body).(map[string]any); ok {
+				ident := map[string]any{}
+				for _, k := range []string{"enterprise", "organization", "user"} {
+					if v, ok := m[k].(map[string]any); ok {
+						ident[k] = v["id"]
+					}
+				}
+				if len(ident) > 0 {
+					data["identity"] = ident
+				}
+			}
+		}
+		_ = output.Print(output.OK(200, data), c.pretty, stdout)
 		return exitOK
 	}
 

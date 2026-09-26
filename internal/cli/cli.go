@@ -37,13 +37,20 @@ Commands:
   dv sent|clicks|opens|bounces|unsubs|notsent|send  data-view reads via SOAP
                     event objects (read-only; BEST option for tracking data;
                     server-side filters: --since 7d --send-id N --limit N)
+  dv recipients <jobId>  per-recipient send status for one email job (REST;
+                    jobId = SendID from dv sent; read-only)
   sub <key|email>   subscriber subscription state + list memberships
                     (read-only; answers "why is this person not getting mail?")
   describe [object] SOAP object catalog: verified props + quirks (offline)
+  soap retrieve <ObjectType>  generic SOAP read: --props REQUIRED, --filter
+                    P=V (repeatable). Retrieve-only — writes stay gated
   auto list|health  automation operational reads: list/detail/healthreport
                     (30-day success/error counts — "what is failing?")
   ts list|get       triggered send definitions (Canceled/Inactive = sends
                     silently not going out)
+  journey list|versions  journey reads (REST): curated list + FULL version
+                    history per key (read-only; lifecycle writes stay gated
+                    behind rest)
   lists [members <id>]  subscriber lists + who-is-on-list (read-only)
   guc list          global unsubscribe categories (enterprise)
   esd list|get      email send definitions (user-initiated sends)
@@ -55,6 +62,8 @@ Commands:
   asset search|pull deliver assets to ~/.mcecli/work/<profile>/asset/ (index + bodies)
   api               explore the REST API surface: mcecli api <section> [--filter X]
   journal           read the write audit trail: mcecli journal [--last N]
+  work prune        local work-cache hygiene: report/--do entries older than
+                    a cutoff (undo images + dumps; journal NEVER touched)
   explain           look up SFMC error patterns: mcecli explain <text>
   doctor            self-diagnostic: config, credentials, tokens, caches
   undo              list/show before-image snapshots (DELETE auto-captured)
@@ -143,6 +152,7 @@ var helpTopics = map[string]string{
 	"session":  usageSession,
 	"query":    usageQuery,
 	"ts":       usageTS,
+	"journey":  usageJourney,
 	"lists":    usageLists,
 	"sub":      usageSub,
 	"auto":     usageAuto,
@@ -150,9 +160,11 @@ var helpTopics = map[string]string{
 	"guc":      usageGUC,
 	"esd":      usageESD,
 	"describe": usageDescribe,
+	"soap":     usageSoap,
 	"users":    usageUsers,
 	"folders":  usageFolders,
 	"journal":  usageJournal,
+	"work":     usageWork,
 	"md":       usageMD,
 	"doctor":   usageDoctor,
 	"explain":  usageExplain,
@@ -218,10 +230,14 @@ func Run(args []string, stdout, stderr io.Writer, version, skillMD string) int {
 		return cmdSub(rest, stdout, stderr)
 	case "describe":
 		return cmdDescribe(rest, stdout, stderr)
+	case "soap":
+		return cmdSoap(rest, stdout, stderr)
 	case "auto":
 		return cmdAuto(rest, stdout, stderr)
 	case "ts":
 		return cmdTS(rest, stdout, stderr)
+	case "journey":
+		return cmdJourney(rest, stdout, stderr)
 	case "lists":
 		return cmdLists(rest, stdout, stderr)
 	case "ens":
@@ -242,6 +258,8 @@ func Run(args []string, stdout, stderr io.Writer, version, skillMD string) int {
 		return cmdUndo(rest, stdout, stderr)
 	case "journal":
 		return cmdJournal(rest, stdout, stderr)
+	case "work":
+		return cmdWork(rest, stdout, stderr)
 	case "explain":
 		return cmdExplain(rest, stdout, stderr)
 	case "doctor":

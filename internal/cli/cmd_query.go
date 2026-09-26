@@ -97,7 +97,21 @@ const usageQuery = `mcecli query — run and retrieve SQL-on-platform query resu
                --text "SQL"   (or @file.sql) — required
                --target KEY   target DE key (validated against it)
                [--category N] folder id (optional)
-               --write REQUIRED (POST, though nothing is written)
+               read-only: no --write gate (provably side-effect-free)
+  mcecli query create <key>     — create a saved query definition
+               --text "SQL|@f.sql" — required
+               --target KEY   target DE key — required
+               --category N   folder id — required (mcecli folders --type queryactivity)
+               [--name N] [--description N] [--update-mode overwrite|update]
+               --write --confirm REQUIRED (a saved query writes to its
+               target whenever it runs)
+  mcecli query get <key>        — full definition incl. queryText
+  mcecli query update <key>     — patch [--text|--target|--category|--name|
+               --description|--update-mode]  --write --confirm REQUIRED
+               [--diff]       dry run: show current vs proposed, change
+               nothing (read-only; mutually exclusive with --write)
+  mcecli query delete <key>     — PERMANENTLY delete the saved query
+               --write --confirm REQUIRED (undo image auto-captured)
 
 Query API (automation/v1/queries): SFMC executes SQL server-side, writes
 results to a target DE. Read the target DE afterwards with mcecli de rows.
@@ -127,6 +141,8 @@ func cmdQuery(args []string, stdout, stderr io.Writer) int {
 		return queryGet(args[1:], stdout, stderr)
 	case "update":
 		return queryUpdate(args[1:], stdout, stderr)
+	case "delete":
+		return queryDelete(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown 'query' subcommand %q\n\n%s", args[0], usageQuery)
 		return exitUsage
@@ -557,9 +573,9 @@ func queryValidate(args []string, stdout, stderr io.Writer) int {
 	if !valid {
 		e.Hint = "SQL is invalid — fix errors above; nothing was created or run"
 	} else if len(warnList) > 0 {
-		e.Hint = "SQL is valid (with warnings) — create with: mcecli rest POST automation/v1/queries --write --body @f.json (field name there is queryText, NOT Text)"
+		e.Hint = "SQL is valid (with warnings) — create with: mcecli query create <key> --text @f.sql --target <DE-key> --category <id> --write --confirm"
 	} else {
-		e.Hint = "SQL is valid — create with: mcecli rest POST automation/v1/queries --write --body @f.json (field name there is queryText, NOT Text)"
+		e.Hint = "SQL is valid — create with: mcecli query create <key> --text @f.sql --target <DE-key> --category <id> --write --confirm"
 	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
@@ -721,11 +737,14 @@ func queryGet(args []string, stdout, stderr io.Writer) int {
 // Only provided fields are sent. VERIFIED endpoint: PATCH
 // /automation/v1/queries/{queryDefinitionId} (discovery; key must be
 // resolved to qid first — GET /{key} 404s).
+// --diff is a read-only dry run (roadmap v1.1): it GETs the current
+// definition and reports field-by-field what the proposed patch would
+// change, sending no PATCH. Mutually exclusive with --write/--confirm.
 func queryUpdate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("query update", flag.ContinueOnError)
 	var c common
 	var text, target, name, desc, category, updateMode string
-	var write, confirm bool
+	var write, confirm, diff bool
 	addCommon(fs, &c)
 	fs.StringVar(&text, "text", "", "new SQL text, or @file.sql")
 	fs.StringVar(&target, "target", "", "new target DE key")
@@ -735,20 +754,15 @@ func queryUpdate(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&updateMode, "update-mode", "", "overwrite | update")
 	fs.BoolVar(&write, "write", false, "confirm the write")
 	fs.BoolVar(&confirm, "confirm", false, "confirm DANGEROUS operation (changes a saved query)")
+	fs.BoolVar(&diff, "diff", false, "dry run: show what would change (current vs proposed), change nothing")
 	if err := parseCmd(fs, args); err != nil {
 		return exitUsage
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprint(stderr, "usage: mcecli query update <key> [--text …] [--target DE] [--category N] [--name N] --write --confirm\n")
+		fmt.Fprint(stderr, "usage: mcecli query update <key> [--text …] [--target DE] [--category N] [--name N] [--diff] --write --confirm\n")
 		return exitUsage
 	}
 	key := fs.Arg(0)
-	if !write || !confirm {
-		e := output.Fail(0, "refusing query update without --write --confirm",
-			"this permanently changes a saved query — retry with both flags")
-		_ = output.Print(e, c.pretty, stdout)
-		return exitUsage
-	}
 
 	body := map[string]any{}
 	if text != "" {
@@ -782,10 +796,34 @@ func queryUpdate(args []string, stdout, stderr io.Writer) int {
 			body["targetUpdateTypeId"] = 0
 		} else if strings.EqualFold(updateMode, "update") {
 			body["targetUpdateTypeId"] = 1
+		} else {
+			e := output.Fail(0, fmt.Sprintf("unknown --update-mode %q", updateMode),
+				"overwrite (truncate+reload) | update (upsert on PK)")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
 		}
 	}
 	if len(body) == 0 {
 		e := output.Fail(0, "nothing to update", "use --text / --target / --category / --name / --description")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+
+	if diff {
+		// a dry run must stay a dry run — honoring --write here would mean a
+		// silently-ignored flag, so the combination is refused instead
+		if write || confirm {
+			e := output.Fail(0, "--diff is a dry run — it cannot be combined with --write/--confirm",
+				"mcecli query update <key> --diff   to preview | drop --diff to apply")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
+		return queryUpdateDiff(&c, key, body, stdout)
+	}
+
+	if !write || !confirm {
+		e := output.Fail(0, "refusing query update without --write --confirm",
+			"this permanently changes a saved query — retry with both flags (or preview with --diff)")
 		_ = output.Print(e, c.pretty, stdout)
 		return exitUsage
 	}
@@ -824,6 +862,148 @@ func queryUpdate(args []string, stdout, stderr io.Writer) int {
 	}
 	e := output.OK(st, updated)
 	e.Hint = "verify: mcecli query get " + key + " — run: mcecli query run " + key + " --write --confirm"
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
+}
+
+// queryUpdateDiff — read-only dry run for query update: resolve key, GET the
+// current definition, report field-by-field what the proposed patch would
+// change. Sends NO PATCH (wire-asserted in tests). No --write gate — same
+// tier as query list/validate.
+func queryUpdateDiff(c *common, key string, body map[string]any, stdout io.Writer) int {
+	s, env, code := newSession(c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	qid, qerr := resolveQueryQID(s, key)
+	if qerr != nil {
+		e := output.Fail(0, qerr.Error(), "mcecli query list to see available queries")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	st, resp, env2, _ := s.call(http.MethodGet, "automation/v1/queries/"+qid, nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	if st < 200 || st > 299 {
+		// diffing against an error body would fabricate "would set" changes —
+		// fail loudly instead
+		msg := strings.TrimSpace(string(resp))
+		if m, ok := parseJSON(resp).(map[string]any); ok {
+			if mstr := str(m, "message"); mstr != "" {
+				msg = mstr
+			}
+		}
+		e := output.Fail(st, "query update --diff could not fetch the current definition: "+msg,
+			"mcecli query get "+key+" — if that fails too, the query may have been deleted")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	current, ok := parseJSON(resp).(map[string]any)
+	if !ok {
+		e := output.Fail(0, "unexpected response shape", "mcecli query get "+key)
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	changes := diffQueryDef(current, body)
+	e := output.OK(200, changes)
+	e.Count = len(changes)
+	if len(changes) == 0 {
+		e.Hint = "dry run — no differences: the current definition already matches; nothing to update"
+	} else {
+		e.Hint = fmt.Sprintf("dry run — nothing changed; %d field(s) would change — apply: mcecli query update %s --write --confirm", len(changes), key)
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
+}
+
+// diffQueryDef compares the proposed patch body against the current
+// definition in the command's canonical field order. Values compare via
+// their %v form so JSON-decoded numbers (float64) match flag-parsed ints.
+// A field absent from the current definition reports from:nil (would be set).
+func diffQueryDef(current, body map[string]any) []map[string]any {
+	changes := []map[string]any{}
+	for _, k := range []string{"queryText", "targetKey", "name", "description", "categoryId", "targetUpdateTypeId"} {
+		proposed, ok := body[k]
+		if !ok {
+			continue
+		}
+		cur, has := current[k]
+		if has && fmt.Sprintf("%v", cur) == fmt.Sprintf("%v", proposed) {
+			continue
+		}
+		changes = append(changes, map[string]any{"field": k, "from": cur, "to": proposed})
+	}
+	return changes
+}
+
+// queryDelete — permanently delete a saved query definition (gated write;
+// lifecycle counterpart of query create). VERIFIED endpoint: DELETE
+// /automation/v1/queries/{queryDefinitionId} (key resolved first). The
+// current definition is auto-captured as an undo image before the DELETE.
+func queryDelete(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("query delete", flag.ContinueOnError)
+	var c common
+	var write, confirm bool
+	addCommon(fs, &c)
+	fs.BoolVar(&write, "write", false, "confirm the write")
+	fs.BoolVar(&confirm, "confirm", false, "confirm DANGEROUS operation (destroys the saved query)")
+	help := addHelp(fs)
+	if err := parseCmd(fs, args); err != nil {
+		return exitUsage
+	}
+	if *help {
+		fmt.Fprint(stdout, usageQuery)
+		return exitOK
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprint(stderr, "usage: mcecli query delete <key> --write --confirm\n")
+		return exitUsage
+	}
+	if !write || !confirm {
+		e := output.Fail(0, "refusing query delete without --write --confirm",
+			"this permanently destroys the saved query — retry with both flags")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	key := fs.Arg(0)
+
+	s, env, code := newSession(&c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	qid, qerr := resolveQueryQID(s, key)
+	if qerr != nil {
+		e := output.Fail(0, qerr.Error(), "mcecli query list to see available queries")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+
+	delPath := "automation/v1/queries/" + qid
+	fullURL := s.res.RestURL() + "/" + delPath
+	undoDir := s.undoSnapshot(http.MethodDelete, fullURL, delPath, &c)
+
+	start := time.Now()
+	st, resp, env2, _ := s.call(http.MethodDelete, delPath, nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	s.journalWriteSnap(&c, http.MethodDelete, fullURL, st, nil, time.Since(start), "", undoDir, "")
+	if st < 200 || st > 299 {
+		e := errorEnvelope(st, resp, http.MethodDelete)
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	e := output.OK(st, map[string]any{"deleted": key, "queryDefinitionId": qid, "undo": undoDir != ""})
+	if undoDir != "" {
+		e.Hint = "undo image captured (mcecli undo list) — the saved SQL is in response.json"
+	} else {
+		e.Hint = "no undo image (pre-delete read failed)"
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }

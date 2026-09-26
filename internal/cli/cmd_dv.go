@@ -9,6 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -50,6 +52,12 @@ const usageDV = `mcecli dv — data-view reads via SOAP event objects (READ-ONLY
   mcecli dv send <id>                — one send's metadata (EmailName/Subject/
                                     FromName) — the _Job join: dv sent → pick
                                     SendID → dv send <SendID>
+  mcecli dv recipients <jobId>       — per-recipient send status for ONE job
+                                    (REST job stats; jobId = SendID from dv
+                                    sent; one row per send transaction)
+               [--fields a,b,c]   — subscriberId,transactionId,transactionTime,domain
+               [--limit N]        — max rows (default 200; 0 = no row cap; loud)
+               [--pages N]        — max item pages to scan (25 recipients/page)
 
 Objects:
   sent=SentEvent(_Sent)  clicks=ClickEvent(_Clicks)  opens=OpenEvent(_Opens)
@@ -75,6 +83,8 @@ func cmdDV(args []string, stdout, stderr io.Writer) int {
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usageDV)
 		return exitOK
+	case "recipients":
+		return dvRecipients(args[1:], stdout, stderr)
 	case "send":
 		return dvGet(args, stdout, stderr)
 	default:
@@ -284,6 +294,153 @@ func dvGet(args []string, stdout, stderr io.Writer) int {
 		hint += " — TRUNCATED to --limit; narrow with --since/--send-id or raise --limit"
 	}
 	e.Hint = hint
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
+}
+
+// dvRecipients — per-recipient send status for one email send job, via
+// GET /messaging/v1/jobs/{id}/stats/sends (roadmap v1.1 "per-recipient send
+// status"). VERIFIED live: items are {subscriberId, stats:[{id,
+// transactionTime, domain}]}; a recipient's stats array carries one entry per
+// send transaction (re-sends repeat). The jobId namespace == _Sent.SendID —
+// the same id answers both dv sent --send-id and this endpoint, so the join
+// is: mcecli dv sent → pick SendID → mcecli dv recipients <SendID>.
+// NOT available: GET /messaging/v1/emailSends/{jobId} (404 live; absent from
+// discovery) — recorded in docs/dev/endpoint-notes.md.
+// Paging: the server pages ITEMS at 25 and does not honor $pageSize (echoes
+// the default) — the command walks $page until the server count is consumed
+// or the page runs dry. Rows are FLATTENED (one per transaction); --limit
+// caps rows loudly, --pages bounds the scan loudly (never silent truncation).
+func dvRecipients(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("dv recipients", flag.ContinueOnError)
+	var c common
+	var fields string
+	var limit, pages int
+	addCommon(fs, &c)
+	fs.StringVar(&fields, "fields", "", "comma-separated projection: subscriberId,transactionId,transactionTime,domain")
+	fs.IntVar(&limit, "limit", 200, "max transaction rows (0 = no row cap)")
+	fs.IntVar(&pages, "pages", 40, "max item pages to scan (server pages recipients at 25)")
+	help := addHelp(fs)
+	if err := parseCmd(fs, args); err != nil {
+		return exitUsage
+	}
+	if *help {
+		fmt.Fprint(stdout, usageDV)
+		return exitOK
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprint(stderr, "usage: mcecli dv recipients <jobId>   (jobId = SendID from mcecli dv sent)\n")
+		return exitUsage
+	}
+	jobID := fs.Arg(0)
+	if _, err := strconv.Atoi(jobID); err != nil {
+		e := output.Fail(0, "jobId must be numeric",
+			"find job ids: mcecli dv sent --fields SendID — then mcecli dv recipients <SendID>")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	if pages < 1 {
+		e := output.Fail(0, "--pages must be >= 1", "server pages recipients at 25 items per call")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	if limit < 0 {
+		e := output.Fail(0, "--limit must be >= 0", "0 = no row cap (--pages still bounds the scan)")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+
+	s, env, code := newSession(&c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+
+	rows := []any{}
+	recipientsSeen := 0
+	serverCount := -1
+	rowCapHit := false
+	for page := 1; page <= pages; page++ {
+		u := url.URL{Path: "messaging/v1/jobs/" + jobID + "/stats/sends"}
+		q := url.Values{}
+		q.Set("$page", strconv.Itoa(page))
+		u.RawQuery = q.Encode()
+		st, resp, env2, _ := s.call(http.MethodGet, u.String(), nil, nil)
+		if env2 != nil {
+			_ = output.Print(env2, c.pretty, stdout)
+			return exitAPI
+		}
+		if st >= 400 {
+			e := errorEnvelope(st, resp, http.MethodGet)
+			if st == 404 {
+				e.Hint = "no send stats for this job (id typo, job never sent, or stats expired) — verify the job: mcecli dv send " + jobID
+			}
+			_ = output.Print(e, c.pretty, stdout)
+			return exitAPI
+		}
+		m, ok := parseJSON(resp).(map[string]any)
+		if !ok {
+			e := output.Fail(st, "unexpected response shape",
+				"raw path: mcecli rest GET messaging/v1/jobs/"+jobID+"/stats/sends")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitAPI
+		}
+		if n, ok := m["count"].(float64); ok {
+			serverCount = int(n)
+		}
+		items, _ := m["items"].([]any)
+		if len(items) == 0 {
+			break
+		}
+		for _, it := range items {
+			recipientsSeen++
+			im, ok := it.(map[string]any)
+			if !ok {
+				continue
+			}
+			subID := im["subscriberId"]
+			stats, _ := im["stats"].([]any)
+			for _, stat := range stats {
+				sm, ok := stat.(map[string]any)
+				if !ok {
+					continue
+				}
+				rows = append(rows, map[string]any{
+					"subscriberId":    subID,
+					"transactionId":   sm["id"],
+					"transactionTime": sm["transactionTime"],
+					"domain":          sm["domain"],
+				})
+			}
+			if limit > 0 && len(rows) >= limit {
+				rowCapHit = true
+				break
+			}
+		}
+		if rowCapHit {
+			break
+		}
+		if serverCount >= 0 && recipientsSeen >= serverCount {
+			break
+		}
+	}
+
+	e := output.OK(200, rows)
+	e.Count = len(rows)
+	hint := "REST job send stats — one row per send transaction (re-sends repeat); subscriberId only, no address (join: mcecli dv sent --send-id " + jobID + ")"
+	if serverCount >= 0 {
+		hint += fmt.Sprintf(" — %d recipient(s) per server count", serverCount)
+	}
+	// a row cap only LIES if more data was actually left behind
+	allFetched := serverCount >= 0 && recipientsSeen >= serverCount
+	if rowCapHit && !allFetched {
+		hint += fmt.Sprintf(" — CAPPED at --limit %d rows; raise --limit for the rest", limit)
+	}
+	if !rowCapHit && serverCount >= 0 && recipientsSeen < serverCount {
+		hint += fmt.Sprintf(" — SCAN CEILING: --pages %d reached, %d of %d recipients fetched; raise --pages", pages, recipientsSeen, serverCount)
+	}
+	e.Hint = hint
+	e.Data = output.Project(e.Data, splitFields(fields))
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }

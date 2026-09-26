@@ -29,7 +29,16 @@ import (
 const usageDE = `mcecli de — data extension commands (list/get/rows/dump are reads; add is a gated write)
 
   mcecli de list  --search NAME [--category ID] [--page N --size N] [--fields f1,f2]
-               --search is REQUIRED (no plain listing exists in the API).
+               --search is REQUIRED (no plain listing exists in the API);
+               --category NARROWS the search (AND filter, not an alternative).
+               Default output is a LEAN projection (name/key/rowCount);
+               --full returns complete raw objects (--fields overrides both).
+  mcecli de list  --all        — FULL DE inventory of the current BU (SOAP,
+               one call, no --search needed)
+               [--category ID] — server-side folder filter
+               [--search STR]  — client-side filter on name+key
+               [--limit N]     — cap rows (0 = full; a cap is loudly hinted)
+               [--fields f1,f2]
   mcecli de get   <key>            — definition + field schema (resolves key via search)
   mcecli de rows  <key|name> [--page N --size N] [--fields f1,f2] [--next PATH]
                paging is token-based; the envelope's "next" carries the
@@ -40,6 +49,8 @@ const usageDE = `mcecli de — data extension commands (list/get/rows/dump are r
   mcecli de add   <key|name> --data @rows.ndjson --write [--batch-size 200]
                file rows: NDJSON lines, JSON array, or {"items":[...]} —
                each row is a FLAT object; chunked async upserts
+  mcecli de delete <key|name> --write --confirm — PERMANENTLY delete the DE
+               (auto-captures an undo image first: mcecli undo list)
   mcecli de find  <key|name>     — search ALL configured BUs + account level
                (DEs are per-BU; this locates which context has the DE)
 
@@ -64,6 +75,8 @@ func cmdDE(args []string, stdout, stderr io.Writer) int {
 		return deAdd(args[1:], stdout, stderr)
 	case "create":
 		return cmdDECreate(args[1:], stdout, stderr)
+	case "delete":
+		return deDelete(args[1:], stdout, stderr)
 	case "field":
 		return cmdDEField(args[1:], stdout, stderr)
 	case "diff":
@@ -83,12 +96,17 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("de list", flag.ContinueOnError)
 	var c common
 	var search, category string
+	var all, full bool
+	var limit int
 	addCommon(fs, &c)
 	addPaging(fs, &c)
 	addProjection(fs, &c)
 	fs.StringVar(&search, "search", "", "search term — REQUIRED ($search: matches name/key/description)")
 	fs.StringVar(&search, "contains", "", "alias for --search")
 	fs.StringVar(&category, "category", "", "category (folder) id instead of --search")
+	fs.BoolVar(&all, "all", false, "full DE inventory of the current BU via SOAP (no --search needed)")
+	fs.IntVar(&limit, "limit", 0, "with --all: cap rows (0 = full — a cap is loudly hinted)")
+	fs.BoolVar(&full, "full", false, "complete raw objects (default is a lean name/key/rowCount projection; --fields overrides both)")
 	help := addHelp(fs)
 	if err := parseCmd(fs, args); err != nil {
 		return exitUsage
@@ -97,9 +115,47 @@ func deList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usageDE)
 		return exitOK
 	}
-	if search == "" && category == "" {
-		e := output.Fail(0, "customObjects requires $search or categoryId",
-			"mcecli de list --search <term>  (or --category <id>)")
+	if all {
+		// no silently-ignored flags: paging has no meaning for a one-call
+		// full retrieve, --limit only exists on this path, and --full only
+		// curates the REST search path (--all output is already curated)
+		if full {
+			e := output.Fail(0, "--full does not apply to --all (its output is already curated)",
+				"mcecli de list --all [--category ID] [--search STR] [--limit N]")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
+		if c.page > 0 || c.size > 0 {
+			e := output.Fail(0, "--page/--size do not apply to --all (SOAP returns the full inventory in one call)",
+				"mcecli de list --all  (--limit N caps loudly, 0 = full)")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
+		if limit < 0 {
+			e := output.Fail(0, "--limit must be >= 0", "0 = full inventory (the default)")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
+		return deListAll(&c, search, category, limit, stdout)
+	}
+	if limit != 0 {
+		e := output.Fail(0, "--limit applies only to --all", "mcecli de list --all --limit N")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	if full && c.fields != "" {
+		e := output.Fail(0, "--full and --fields are mutually exclusive",
+			"--full for complete objects, or --fields a,b,c to choose columns")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	if search == "" {
+		// $search is required even when categoryId narrows the results — the
+		// platform 400s on categoryId alone (VERIFIED: it is an AND-filter,
+		// not an alternative), so fail fast client-side with the truthful
+		// contract instead of forwarding a request that cannot succeed.
+		e := output.Fail(0, "this endpoint requires $search — a plain listing does not exist",
+			"mcecli de list --search <term>  (--category <id> narrows the search: AND filter, not an alternative)")
 		_ = output.Print(e, c.pretty, stdout)
 		return exitUsage
 	}
@@ -134,6 +190,91 @@ func deList(args []string, stdout, stderr io.Writer) int {
 	}
 	if e.Count == 0 {
 		e.Hint = "no matches in this context — DEs are per-BU: mcecli bu discover shows reachable BUs, mcecli de find <name> searches them all"
+	}
+	// default output curation (roadmap v1.1): the raw listing carries ~25
+	// properties; agents almost always want the name/key/rowCount triad.
+	// Precedence: --fields wins over --full wins over the lean default.
+	if c.fields != "" {
+		e.Data = output.Project(e.Data, splitFields(c.fields))
+	} else if !full {
+		if e.Hint == "" {
+			e.Hint = "lean default projection (name/key/rowCount) — --full for complete objects, --fields a,b,c to choose columns"
+		}
+		e.Data = output.Project(e.Data, []string{"name", "key", "rowCount"})
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
+}
+
+// deListAll enumerates ALL data extensions of the current BU context via a
+// SOAP DataExtension Retrieve. Motivated by agent-feedback round 3: the REST
+// customObjects endpoint is search-only with 25-row server pages, so
+// estate-scale audits (schema audit, orphan detection) needed dozens of
+// calls. VERIFIED live 2026-09-25: Name/CustomerKey/CategoryID/CreatedDate/
+// IsSendable all retrievable, a full BU comes back in ONE round trip;
+// RowCount is NOT retrievable on this object; CategoryID equals filters
+// server-side. NOTE soap.Opts.MaxRows does not trim a single-page response
+// (it only stops continuation) — --limit trims HERE, loudly.
+func deListAll(c *common, search, category string, limit int, stdout io.Writer) int {
+	s, env, code := newSession(c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	opts := soap.Opts{}
+	if category != "" {
+		opts.Filters = []soap.Filter{{Prop: "CategoryID", Op: "equals", Value: category}}
+	}
+	rows, status, err := soap.Retrieve(context.Background(), s.res.SoapURL(), s.tok.AccessToken,
+		"DataExtension",
+		[]string{"Name", "CustomerKey", "CategoryID", "CreatedDate", "IsSendable"}, opts)
+	if err != nil {
+		e := output.Fail(0, err.Error(), "SOAP retrieve failed — mcecli de list --search <term> uses the REST path")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	if status != "OK" {
+		e := output.Fail(0, "SOAP OverallStatus: "+status, "mcecli de list --search <term> uses the REST path")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	total := len(rows)
+	out := make([]any, 0, total)
+	for _, r := range rows {
+		name, key := r["Name"], r["CustomerKey"]
+		if search != "" &&
+			!strings.Contains(strings.ToLower(name), strings.ToLower(search)) &&
+			!strings.Contains(strings.ToLower(key), strings.ToLower(search)) {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":        name,
+			"key":         key,
+			"categoryId":  r["CategoryID"],
+			"createdDate": r["CreatedDate"],
+			"isSendable":  strings.EqualFold(r["IsSendable"], "true"),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, _ := out[i].(map[string]any)["name"].(string)
+		b, _ := out[j].(map[string]any)["name"].(string)
+		return strings.ToLower(a) < strings.ToLower(b)
+	})
+	e := output.OK(200, out)
+	e.Count = len(out)
+	matched := len(out)
+	switch {
+	case limit > 0 && matched > limit:
+		// never cap an inventory silently — same rule as auto health
+		e.Data = out[:limit]
+		e.Count = limit
+		e.Hint = fmt.Sprintf("CAPPED by --limit %d: %d DEs in inventory, showing %d — drop --limit for the full inventory",
+			limit, matched, limit)
+	case search != "":
+		e.Hint = fmt.Sprintf("%d of %d DEs in this BU context match %q (client-side name/key filter; full enumeration via SOAP)",
+			matched, total, search)
+	default:
+		e.Hint = fmt.Sprintf("full enumeration via SOAP: %d data extensions in this BU context (RowCount not exposed by this path — de get for schema, de rows for data)", total)
 	}
 	e.Data = output.Project(e.Data, splitFields(c.fields))
 	_ = output.Print(e, c.pretty, stdout)
@@ -868,4 +1009,79 @@ func writeBeforeRows(undoDir string, rows []map[string]any) {
 	_ = os.WriteFile(filepath.Join(undoDir, "before-rows.ndjson"), []byte(b.String()), 0o600)
 	_ = os.WriteFile(filepath.Join(undoDir, "README.txt"), []byte(
 		"Before-image rows captured before an async upsert.\nRollback: re-add these rows via 'mcecli de add' (values may need upsert semantics).\n"), 0o600)
+}
+
+// deDelete — permanently delete a data extension (gated write; the de
+// lifecycle counterpart of de create). VERIFIED endpoint: DELETE
+// /data/v1/customObjects/{id} (discovery; id, not key — resolved first).
+// Before the DELETE, the current definition is auto-captured as an undo
+// image (same mechanism as the rest passthrough) so rollback is possible
+// with ordinary commands.
+func deDelete(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("de delete", flag.ContinueOnError)
+	var c common
+	var write, confirm bool
+	addCommon(fs, &c)
+	fs.BoolVar(&write, "write", false, "confirm the write")
+	fs.BoolVar(&confirm, "confirm", false, "confirm DANGEROUS operation (destroys the DE and its rows)")
+	help := addHelp(fs)
+	if err := parseCmd(fs, args); err != nil {
+		return exitUsage
+	}
+	if *help {
+		fmt.Fprint(stdout, usageDE)
+		return exitOK
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprint(stderr, "usage: mcecli de delete <key|name> --write --confirm\n")
+		return exitUsage
+	}
+	if !write || !confirm {
+		e := output.Fail(0, "refusing de delete without --write --confirm",
+			"this permanently destroys the DE and ALL its rows — retry with both flags")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	s, env, code := newSession(&c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	m, denv := resolveDE(s, name)
+	if denv != nil {
+		_ = output.Print(denv, c.pretty, stdout)
+		return exitAPI
+	}
+
+	delPath := "data/v1/customObjects/" + url.PathEscape(m.ID)
+	fullURL := s.res.RestURL() + "/" + delPath
+	undoDir := s.undoSnapshot(http.MethodDelete, fullURL, "data/v1/customObjects/"+url.PathEscape(m.ID), &c)
+
+	start := time.Now()
+	st, resp, env2, _ := s.call(http.MethodDelete, delPath, nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	s.journalWriteSnap(&c, http.MethodDelete, fullURL, st, nil, time.Since(start), "", undoDir, "")
+	if st < 200 || st > 299 {
+		e := errorEnvelope(st, resp, http.MethodDelete)
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	e := output.OK(st, map[string]any{
+		"deleted": m.Key,
+		"name":    m.Name,
+		"id":      m.ID,
+		"undo":    undoDir != "",
+	})
+	if undoDir != "" {
+		e.Hint = "undo image captured (mcecli undo list) — recreate with: mcecli de create + de add"
+	} else {
+		e.Hint = "no undo image (pre-delete read failed) — recreate with: mcecli de create + de add"
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
 }
