@@ -201,6 +201,7 @@ bulk exports). REST rowset NEVER reaches data views (verified 404).
 | GET /data/v1/customobjectdata/key/{key}/rowset | VERIFIED | $-params; token-based continuation via requestToken; links.next gives next page path |
 | GET /data/v1/customobjectdata/token/{token}/rowset | VERIFIED | continuation; pass --next "data/v1/customobjectdata/token/..." from envelope |
 | GET /data/v1/customobjectdata (bare) | BROKEN | 404 — no bare collection |
+| DELETE /data/v1/customObjects/{id} | DISCOVERY-VERIFIED | deletes the DE object; id (GUID) not key — curated as `mcecli de delete <key> --write --confirm` with an auto-captured undo image (de get before the delete). Destructive: live-fire reserved for owner-approved ops |
 
 ### DE writes
 | Endpoint | Status | Notes |
@@ -239,6 +240,21 @@ message "AllVersions=true or VersionNumber required"; ?VersionNumber=N
 narrows to one version; an unknown version returns an empty array).
 Older versions are immutable history with their own status (Stopped/…).
 Curated: `mcecli journey list` + `mcecli journey versions <key>`.
+
+Journey PERFORMANCE (VERIFIED live, round 6): the status endpoint's `id`
+is STABLE across versions (journey id, not per-version). Two summaries:
+- GET /interaction/v1/interactions/{id}/summary → {id, activities:
+  [{type, count}]} — ACTIVE activity counts across versions
+- POST /interaction/v1/interactions/journeyhistory/summary body
+  {"objectId": "<journey-id>"} → population counters {total,
+  totalContactCount, waiting, expired, cameOffWait, successCount,
+  errorCount, warningCount}. A READ query despite being a POST (validate
+  precedent — no gate in the curated command; body wire-asserted)
+- POST /interaction/v1/interactions/journeyhistory/search — paged contact
+  history items ({count,page,pageSize:100}); BODY SCHEMA UNDOCUMENTED in
+  discovery ({} works = full scan); left passthrough-only
+Curated: `mcecli journey stats <key>` (resolves key → id → both
+summaries in one envelope).
 
 | Endpoint | Status | Notes |
 |---|---|---|
@@ -363,6 +379,7 @@ into `mcecli describe` (embedded catalog, live-bisected + doc-marked).
 | ESD context anomaly | RESOLVED 2026-09-17 | same cause as TSD anomaly: mcecli session was on prod-read while probes used dev-full — DEV vs PROD estates, not request shape |
 | GET /platform/v1/ens-callbacks | VERIFIED | registered callbacks → mcecli ens callbacks |
 | GET /platform/v1/ens-subscriptions-by-cb/{id} | VERIFIED | subscribed to SendEvents.AutomationInstanceStarted + AutomationInstanceErrored → mcecli ens subs |
+| GET /platform/v1/tokenContext | VERIFIED | {enterprise:{id}, organization:{id}, user:{id}} behind the CURRENT token — answers "which user/org is this token?" in multi-profile setups; surfaced in mcecli auth test (best-effort, failure never fails the command) |
 | Retrieve AutomationInstance | 🚫 BLOCKED | needs AutomationID filter (unfiltered → PartnerProperties error); even with valid recent id → "No rows were found" — instances live on child-BU contexts unreachable with current packages. Healthreport (REST) is the working ops view |
 | Retrieve SendSummary | VERIFIED | SendID filter WORKS (1 exact row); TotalSent retrievable; Delivered/Bounces NOT — TotalSent-only value, kept passthrough-only |
 

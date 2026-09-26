@@ -26,13 +26,20 @@ This document covers what's coming next.
 - [x] SOAP passthrough redesign — shipped as `soap retrieve`: Retrieve
       is the only verb reachable (structured flags, no body passthrough),
       --props required, equals-only filters, read-only tier
+- [x] journey stats — population + activity summary across ALL versions
+      (gap-audit find; history POST is a wire-asserted read-query)
+- [x] de delete / query delete — lifecycle completeness for the curated
+      creators; gated, undo-imaged, journaled
+- [x] work-cache pruning — `work prune` (report default, --do deletes,
+      journal never touched)
+- [x] token identity — auth test surfaces tokenContext ids
 
 ## Ideas (unscheduled)
 
 - `de find --all-profiles` — cross-profile visibility map
-- work-cache pruning (TTL-based cleanup of `~/.mcecli/work/`)
 - journey create/publish/stop — needs careful sendout-safety design;
   deliberately not exposed yet
+- `work prune` SHIPPED in v1.1 (completeness batch)
 
 ## Known platform limitations (not mcecli bugs)
 

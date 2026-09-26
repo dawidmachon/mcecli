@@ -62,6 +62,8 @@ Commands:
   asset search|pull deliver assets to ~/.mcecli/work/<profile>/asset/ (index + bodies)
   api               explore the REST API surface: mcecli api <section> [--filter X]
   journal           read the write audit trail: mcecli journal [--last N]
+  work prune        local work-cache hygiene: report/--do entries older than
+                    a cutoff (undo images + dumps; journal NEVER touched)
   explain           look up SFMC error patterns: mcecli explain <text>
   doctor            self-diagnostic: config, credentials, tokens, caches
   undo              list/show before-image snapshots (DELETE auto-captured)
@@ -162,6 +164,7 @@ var helpTopics = map[string]string{
 	"users":    usageUsers,
 	"folders":  usageFolders,
 	"journal":  usageJournal,
+	"work":     usageWork,
 	"md":       usageMD,
 	"doctor":   usageDoctor,
 	"explain":  usageExplain,
@@ -255,6 +258,8 @@ func Run(args []string, stdout, stderr io.Writer, version, skillMD string) int {
 		return cmdUndo(rest, stdout, stderr)
 	case "journal":
 		return cmdJournal(rest, stdout, stderr)
+	case "work":
+		return cmdWork(rest, stdout, stderr)
 	case "explain":
 		return cmdExplain(rest, stdout, stderr)
 	case "doctor":

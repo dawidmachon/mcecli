@@ -110,6 +110,8 @@ const usageQuery = `mcecli query — run and retrieve SQL-on-platform query resu
                --description|--update-mode]  --write --confirm REQUIRED
                [--diff]       dry run: show current vs proposed, change
                nothing (read-only; mutually exclusive with --write)
+  mcecli query delete <key>     — PERMANENTLY delete the saved query
+               --write --confirm REQUIRED (undo image auto-captured)
 
 Query API (automation/v1/queries): SFMC executes SQL server-side, writes
 results to a target DE. Read the target DE afterwards with mcecli de rows.
@@ -139,6 +141,8 @@ func cmdQuery(args []string, stdout, stderr io.Writer) int {
 		return queryGet(args[1:], stdout, stderr)
 	case "update":
 		return queryUpdate(args[1:], stdout, stderr)
+	case "delete":
+		return queryDelete(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown 'query' subcommand %q\n\n%s", args[0], usageQuery)
 		return exitUsage
@@ -933,4 +937,73 @@ func diffQueryDef(current, body map[string]any) []map[string]any {
 		changes = append(changes, map[string]any{"field": k, "from": cur, "to": proposed})
 	}
 	return changes
+}
+
+// queryDelete — permanently delete a saved query definition (gated write;
+// lifecycle counterpart of query create). VERIFIED endpoint: DELETE
+// /automation/v1/queries/{queryDefinitionId} (key resolved first). The
+// current definition is auto-captured as an undo image before the DELETE.
+func queryDelete(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("query delete", flag.ContinueOnError)
+	var c common
+	var write, confirm bool
+	addCommon(fs, &c)
+	fs.BoolVar(&write, "write", false, "confirm the write")
+	fs.BoolVar(&confirm, "confirm", false, "confirm DANGEROUS operation (destroys the saved query)")
+	help := addHelp(fs)
+	if err := parseCmd(fs, args); err != nil {
+		return exitUsage
+	}
+	if *help {
+		fmt.Fprint(stdout, usageQuery)
+		return exitOK
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprint(stderr, "usage: mcecli query delete <key> --write --confirm\n")
+		return exitUsage
+	}
+	if !write || !confirm {
+		e := output.Fail(0, "refusing query delete without --write --confirm",
+			"this permanently destroys the saved query — retry with both flags")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	key := fs.Arg(0)
+
+	s, env, code := newSession(&c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	qid, qerr := resolveQueryQID(s, key)
+	if qerr != nil {
+		e := output.Fail(0, qerr.Error(), "mcecli query list to see available queries")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+
+	delPath := "automation/v1/queries/" + qid
+	fullURL := s.res.RestURL() + "/" + delPath
+	undoDir := s.undoSnapshot(http.MethodDelete, fullURL, delPath, &c)
+
+	start := time.Now()
+	st, resp, env2, _ := s.call(http.MethodDelete, delPath, nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	s.journalWriteSnap(&c, http.MethodDelete, fullURL, st, nil, time.Since(start), "", undoDir, "")
+	if st < 200 || st > 299 {
+		e := errorEnvelope(st, resp, http.MethodDelete)
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	e := output.OK(st, map[string]any{"deleted": key, "queryDefinitionId": qid, "undo": undoDir != ""})
+	if undoDir != "" {
+		e.Hint = "undo image captured (mcecli undo list) — the saved SQL is in response.json"
+	} else {
+		e.Hint = "no undo image (pre-delete read failed)"
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
 }

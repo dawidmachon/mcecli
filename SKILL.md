@@ -58,6 +58,7 @@ Per-call override instead of switching: `mcecli --bu <name|MID> de list`
     mcecli api messaging getMessageSendsCollection   # method detail + ready mcecli rest line
     mcecli journey list                        # journeys in this BU (newest version per key)
     mcecli journey versions <key>              # FULL version history: v1..vN with statuses (one call)
+    mcecli journey stats <key>                 # population + activity summary across ALL versions (is it working?)
     mcecli soap retrieve List --props ID,ListName --filter ListName=News   # any SOAP object not curated yet
     mcecli de list --search preference         # $search is required by the API; lean default output (name/key/rowCount)
     mcecli de list --search preference --full  # complete raw objects (--fields picks columns; overrides lean default)
@@ -177,6 +178,8 @@ Verified write patterns on this platform:
 | create a saved query | `mcecli query create <key> --text "SQL" --target DE --category <id> --write --confirm` | field is queryText; validate first: `mcecli query validate` (side-effect-free, no gate) |
 | inspect a saved query | `mcecli query get <key>` — full definition incl. queryText (GET /{id} 404s on the key — resolved internally) | |
 | change a saved query safely | `mcecli query update <key> --text/--target/--category/--name --diff` — DRY RUN: shows current vs proposed, writes nothing; add `--write --confirm` to apply | |
+| delete a saved query | `mcecli query delete <key> --write --confirm` — resolves key→id internally; auto-captures an undo image (mcecli undo list) | permanent — confirm the exact key first |
+| delete a data extension | `mcecli de delete <key|name> --write --confirm` — destroys the DE and ALL rows; undo image auto-captured | permanent — de dump first if rows matter |
 | list platform users | `mcecli users list --search X` — all platform users, client-side search | |
 | find folder ids | `mcecli folders --type dataextension|queryactivity` — ContentType server-side filter works | |
 | find endpoints by keyword | `mcecli api --search <keyword>` — cross-section discovery search | |
@@ -233,6 +236,11 @@ The envelope note (stderr) and `mcecli journal` point to it.
 Rollback is MANUAL (never auto-executed): re-create the resource from the
 saved JSON with gated commands (mcecli rest POST ... --write). DELETE of DE
 definitions restores via re-POST of the saved definition JSON.
+Curated `de delete` / `query delete` capture the same undo image.
+
+Work-cache hygiene (report first, `--do` deletes; journal NEVER touched):
+
+    mcecli work prune [--older-than 30d] [--do] [--profile P]
 
 ## Writes are audited — every gated write is journaled
 

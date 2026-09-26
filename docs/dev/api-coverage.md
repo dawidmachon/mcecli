@@ -17,11 +17,12 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 | /data/v1/customobjectdata/{key,token}/rowset | de rows/dump | ✅ |
 | /data/v1/async/dataextensions/{id,key}/rows PUT/POST | de add | ✅ |
 | /asset/v1/content/assets(+/{id},/file) | asset search/pull | ✅ |
-| /automation/v1/queries (list/create/validate/delete) | query list/create* | ✅ (*create via rest) |
+| /automation/v1/queries (list/create/validate/delete) | query list/create/delete* | ✅ (delete = curated gated write, undo snapshot) |
 | /automation/v1/queries/{id}/actions/{start,isrunning} | query run/status | ✅ |
 | /automation/v1/queries/{id}/log | query run | ✅ (empty-on-success quirk) |
 | /interaction/v1/interactions (+key:{key}?extras) | journey list / rest / md pull | ✅ (newest version only; $pageSize + $filter not honored) |
 | /interaction/v1/interactions/status/key:{key} (version history) | journey versions | ✅ (AllVersions=true / VersionNumber=N; unknown version → empty array) |
+| /interaction/v1/interactions/{id}/summary + /journeyhistory/summary | journey stats | ✅ (population + activity across ALL versions; history POST is a read-query — body {"objectId"} wire-asserted) |
 | /interaction/v1/eventDefinitions | rest | ✅ |
 | /interaction/v1/interactions/{id} lifecycle (stop/pause/publish/event) | ❌ | gated writes — deferred (sendout risk) |
 | /automation/v1/automations (list/detail/healthreport) | auto list/detail/health | ✅ (start/stop stay gated via rest) |
@@ -34,8 +35,10 @@ Legend: ✅ verified live · 🟡 implemented, unverified · 🔲 passthrough on
 | /hub/v1/dataeventsasync (row/rowset upsert+delete) | rest | passthrough-only — same scope caveats; `de add` covers the bulk flow |
 | /hub/v1/async bulk ingest (create/stage/complete) | ❌ | CLOSED v1.1: paths don't exist in discovery (data + hub audited); the working bulk path is de add (data/v1/async rows) |
 | SOAP generic retrieve (any object) | soap retrieve | ✅ (Retrieve-only by construction; --props required; equals filters) |
-| /interaction/v1/eventNotification (callbacks/subscriptions) | ❌ | 🔲 — P2 (webhook monitoring) |
-| /platform/v1/token introspection | ❌ | scope-debug use — P3 |
+| /interaction/v1/eventNotification | ❌ | row corrected: the ENS API mcecli covers is /messaging/v1/eventNotificationCallbacks (ens callbacks|subs, ✅); no /interaction/v1/eventNotification methods appear in discovery |
+| /platform/v1/tokenContext (token identity) | auth test | ✅ VERIFIED ({enterprise,organization,user}.id — answers "which user is this token?") |
+| /data/v1/customObjects/{id} DELETE | de delete | 🟡 curated gated write (undo image auto-captured; endpoint verified in discovery, destructive live-fire reserved) |
+| /asset/v1/content/categories POST (content-folder create) | rest | 🔲 passthrough-only — content folders only; DE/query (DataFolder) creation has no REST path |
 | discovery docs /{section}/v1/rest | api | ✅ (10 sections) |
 | everything else | rest | 🔲 generic passthrough |
 

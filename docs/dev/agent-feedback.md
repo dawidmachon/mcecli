@@ -167,3 +167,47 @@ fake values.
 Round-5 verdict: 2 shipped, 1 closed-by-probe, 0 rejected.
 Lesson repeated from round 4: the discovery index is the cheapest way to
 correct a roadmap guess before a line of code is written.
+
+---
+
+## Round 6 — completeness & quality audit (2026-09-25)
+
+Question driving this round: "what's MISSING for a complete ops tool?"
+Method: full pass over the coverage matrix + endpoint inventory +
+discovery sections (data 93 / hub 103 / interaction / platform / asset
+methods), then live probes for every candidate before any code.
+
+Evaluated and dispositioned:
+
+1. **Journey performance reads** — agents could see journey structure but
+   not health. → **SHIPPED** `journey stats <key>`: key → journey id
+   (stable across versions — probe finding) → GET activity summary + POST
+   journeyhistory/summary population counters. The POST is a read query
+   (validate precedent); the body is wire-asserted so it can never drift
+   into a mutation. journeyhistory/search: works with an empty body but
+   the filter schema is undocumented → **DEFERRED** passthrough-only
+   (guessing filter shapes would be speculative).
+2. **DE lifecycle asymmetry** — de create existed, no delete. → **SHIPPED**
+   `de delete` (gated, key-resolved, undo image BEFORE the delete,
+   journaled). Same rails for `query delete`. Live-fire deliberately not
+   exercised this session — destructive operations need owner approval of
+   the exact operation.
+3. **Token identity debugging** — multi-profile setups raise "WHOSE token
+   is this?" → **SHIPPED** inside auth test (tokenContext ids; best-effort
+   read, failure never fails the command).
+4. **Work-cache growth** — undo images and dumps accumulate silently →
+   **SHIPPED** `work prune` (report default, --do deletes, cutoff flags;
+   journal never touched; undo deletion explicitly warned about).
+5. **Rejected/deferred after audit**: row-level DE delete (no REST path;
+   hub dataeventsasync delete is scope-gated passthrough), asset-folder
+   create (content folders only — DE/query folders have no REST path),
+   AccountUser/Role/ExtractDefinition (not on ops roadmap, unchanged).
+6. **Docs debt**: stale coverage row claimed /interaction/v1/
+   eventNotification was P2 — the ENS API the tool covers is
+   /messaging/v1/eventNotificationCallbacks (ens commands, verified);
+   corrected.
+
+Round-6 verdict: 5 shipped, 2 deferred, several rejected with rationale.
+Lesson: a coverage matrix is only useful if stale rows are corrected the
+moment they're noticed — a wrong "❌ missing" row costs a future session
+the same probe twice.

@@ -49,6 +49,8 @@ const usageDE = `mcecli de — data extension commands (list/get/rows/dump are r
   mcecli de add   <key|name> --data @rows.ndjson --write [--batch-size 200]
                file rows: NDJSON lines, JSON array, or {"items":[...]} —
                each row is a FLAT object; chunked async upserts
+  mcecli de delete <key|name> --write --confirm — PERMANENTLY delete the DE
+               (auto-captures an undo image first: mcecli undo list)
   mcecli de find  <key|name>     — search ALL configured BUs + account level
                (DEs are per-BU; this locates which context has the DE)
 
@@ -73,6 +75,8 @@ func cmdDE(args []string, stdout, stderr io.Writer) int {
 		return deAdd(args[1:], stdout, stderr)
 	case "create":
 		return cmdDECreate(args[1:], stdout, stderr)
+	case "delete":
+		return deDelete(args[1:], stdout, stderr)
 	case "field":
 		return cmdDEField(args[1:], stdout, stderr)
 	case "diff":
@@ -1005,4 +1009,79 @@ func writeBeforeRows(undoDir string, rows []map[string]any) {
 	_ = os.WriteFile(filepath.Join(undoDir, "before-rows.ndjson"), []byte(b.String()), 0o600)
 	_ = os.WriteFile(filepath.Join(undoDir, "README.txt"), []byte(
 		"Before-image rows captured before an async upsert.\nRollback: re-add these rows via 'mcecli de add' (values may need upsert semantics).\n"), 0o600)
+}
+
+// deDelete — permanently delete a data extension (gated write; the de
+// lifecycle counterpart of de create). VERIFIED endpoint: DELETE
+// /data/v1/customObjects/{id} (discovery; id, not key — resolved first).
+// Before the DELETE, the current definition is auto-captured as an undo
+// image (same mechanism as the rest passthrough) so rollback is possible
+// with ordinary commands.
+func deDelete(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("de delete", flag.ContinueOnError)
+	var c common
+	var write, confirm bool
+	addCommon(fs, &c)
+	fs.BoolVar(&write, "write", false, "confirm the write")
+	fs.BoolVar(&confirm, "confirm", false, "confirm DANGEROUS operation (destroys the DE and its rows)")
+	help := addHelp(fs)
+	if err := parseCmd(fs, args); err != nil {
+		return exitUsage
+	}
+	if *help {
+		fmt.Fprint(stdout, usageDE)
+		return exitOK
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprint(stderr, "usage: mcecli de delete <key|name> --write --confirm\n")
+		return exitUsage
+	}
+	if !write || !confirm {
+		e := output.Fail(0, "refusing de delete without --write --confirm",
+			"this permanently destroys the DE and ALL its rows — retry with both flags")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	s, env, code := newSession(&c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+	m, denv := resolveDE(s, name)
+	if denv != nil {
+		_ = output.Print(denv, c.pretty, stdout)
+		return exitAPI
+	}
+
+	delPath := "data/v1/customObjects/" + url.PathEscape(m.ID)
+	fullURL := s.res.RestURL() + "/" + delPath
+	undoDir := s.undoSnapshot(http.MethodDelete, fullURL, "data/v1/customObjects/"+url.PathEscape(m.ID), &c)
+
+	start := time.Now()
+	st, resp, env2, _ := s.call(http.MethodDelete, delPath, nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	s.journalWriteSnap(&c, http.MethodDelete, fullURL, st, nil, time.Since(start), "", undoDir, "")
+	if st < 200 || st > 299 {
+		e := errorEnvelope(st, resp, http.MethodDelete)
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+	e := output.OK(st, map[string]any{
+		"deleted": m.Key,
+		"name":    m.Name,
+		"id":      m.ID,
+		"undo":    undoDir != "",
+	})
+	if undoDir != "" {
+		e.Hint = "undo image captured (mcecli undo list) — recreate with: mcecli de create + de add"
+	} else {
+		e.Hint = "no undo image (pre-delete read failed) — recreate with: mcecli de create + de add"
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
 }

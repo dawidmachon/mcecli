@@ -15,6 +15,28 @@
   usage scope labels on `auto list` (BU context) vs `auto health` (estate)
 - query hints now point to `query create`/`get`/`update` (was: raw rest)
 
+### Added (completeness & quality batch — gap audit)
+- `journey stats <key>` — population + activity summary across ALL
+  versions (probed: the status endpoint's id is stable across versions;
+  GET /{id}/summary → active activity counts; POST
+  /journeyhistory/summary {"objectId"} → totalContactCount/waiting/
+  success/error counters). The history POST is a side-effect-free read
+  (validate precedent, no gate; body wire-asserted). journeyhistory
+  search stays passthrough-only — body schema undocumented
+- `de delete <key|name> --write --confirm` — DE lifecycle completeness
+  (counterpart of de create); DELETE /data/v1/customObjects/{id} with
+  key resolution; undo image auto-captured before the delete; journaled
+- `query delete <key> --write --confirm` — saved-query lifecycle
+  completeness; key→qid resolution + undo image + journal, same rails
+- `auth test` now reports token identity (GET /platform/v1/
+  tokenContext → enterprise/organization/user ids; VERIFIED live) —
+  answers "which user is this token?" in multi-profile setups;
+  best-effort: failure never fails auth test
+- `work prune` — local work-cache hygiene (roadmap idea): report-only
+  by default, `--do` deletes entries older than a cutoff (--older-than
+  30m/24h/7d/90d); undo images included (that removes the rollback
+  path — documented); the journal is NEVER touched
+
 ### Added (v1.1 roadmap batch)
 - `journey list` / `journey versions <key>` — journey version modeling.
   PROBED: the collection returns ONE item per key (newest version only;
