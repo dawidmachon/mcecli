@@ -248,3 +248,12 @@ Process note: this round's biggest catch (#2) shipped in round 2 because
 its test asserted the buggy behavior against an endpoint that tolerates
 $-less params. Wire assertions must use endpoints that REJECT malformed
 forms, not ones that tolerate them.
+
+### Process incident (round 7, same day): scrub script reached the public tag
+
+During the v1.2.1 release a local scrub script (containing the real token
+values) was accidentally committed via a broad `git add -A` and pushed with
+the release tag. Caught by the fresh-clone battery, removed via history
+rewrite, tag + release assets re-cut. Standing rules reaffirmed: NEVER
+`git add -A` — stage explicit paths; scrub scripts live outside the repo;
+every release is verified by a fresh-clone battery before being called done.
