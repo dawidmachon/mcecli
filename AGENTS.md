@@ -18,6 +18,16 @@ Stamped build (version from git tag):
 go build -ldflags "-X main.version=$(git describe --tags --always)" -o mcecli.exe .
 ```
 
+## Tenant data — hard rule
+
+Findings from live use document **platform-layer behavior only** (Salesforce
+API semantics reproducible on any account). Never record account/tenant-
+specific data anywhere — no MIDs, ids, keys, GUIDs, object/automation/user
+names, org names, live counts, package scopes, emails, domains, or behavior
+caused by one account's configuration. Applies to docs, commit messages,
+test fixtures, and diffs (a commit that removes a value publishes it in its
+diff — scrubs on public history happen only via history rewrite).
+
 ## Hard invariants (tests enforce these)
 
 1. **Write gates**: any non-GET requires `--write`; DELETE also `--confirm`.
