@@ -1,6 +1,33 @@
 # Changelog
 
-## v1.2.0 — released (2026-09-26, local test build)
+## v1.2.1 — released
+
+### Fixed (round-7 independent agent field test)
+- `rest --query` stripped the leading `$` from parameter keys
+  (`$filter`→`filter`), silently disabling filters/paging on every OData
+  endpoint; keys now pass through verbatim (wire-asserted)
+- `rest --fields` on collection envelopes replaced `items` with `{}` —
+  projection now applies to each item; `--fields` + `--raw` is a loud
+  usage error instead of a silent ignore
+- `auto --expand-queries` mislabeled REST query activities (objectTypeId
+  43 = queryactivity, live-verified) and returned empty expansions
+- `auto <key>` now surfaces `statusId` + the schedule (scheduleStatus/
+  startDate/iCalRecur/timezoneId) with an explicit paused-schedule hint
+- help surfaces: `de create`/`de delete` and the full query family
+  (validate/create/get/update/delete) now listed in top usage and `help de`
+- `folders`: type-aware hints (automations → REST body categoryId) +
+  plural-form suggestion for empty singular-type results
+- `explain`: 5 new KB entries for the automation scheduling failure chain;
+  explain returns one envelope (first/best match) per the envelope contract
+
+### Documented (platform behavior, round 7)
+- automation scheduling recipe (startSource.schedule + numeric timezoneId)
+  and its pitfalls: malformed schedule payloads return 200 OK with no
+  effect; no API pause/resume/start routes; API-created schedules start
+  paused; health report skips never-run automations; rowset field names
+  come back lowercased — see docs/dev/endpoint-notes.md
+
+## v1.2.0 — released
 
 ### Added (agent field-testing round 3 — post-v1.0.0)
 - `de list --all` — full DE inventory of the current BU via ONE SOAP call
