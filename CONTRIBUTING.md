@@ -53,3 +53,14 @@ Tests enforce these — review will catch violations.
 - `docs/dev/api-coverage.md` — REST/SOAP coverage matrix.
 - `docs/dev/sql-reference.md` — validated SQL syntax battery.
 - `docs/dev/tools/` — corpus inventory scripts (used to generate coverage maps).
+
+## Tenant data — hard rule
+
+mcecli documents **platform-layer behavior only**: quirks and semantics of
+the Salesforce API itself, reproducible on any account. Never include
+account/tenant-specific data in code, tests, docs, commit messages, issues,
+or PRs — no MIDs, ids, keys, GUIDs, object/automation/user names, org names,
+live counts, package scopes, emails, domains, or org-specific behavior.
+Findings caused by one account's configuration are not findings; generalize
+or omit. Maintainers treat any tenant-identifying content as a defect and
+will remove it, including from history.
