@@ -32,8 +32,9 @@ Commands:
   session list|use|show  multi-agent session isolation (MCECLI_SESSION env)
   auth test         fetch a token, show scopes + instance URLs
                     (--refresh forces; --all-bus validates account + every BU)
-  de list|get|rows|add|dump|diff|find  data extensions (add = gated write;
-                    diff = live-vs-dump drift check; find = cross-BU search)
+  de list|get|rows|add|create|delete|dump|diff|find  data extensions (add = row insert;
+                    create/delete = DE lifecycle, gated; diff = live-vs-dump drift;
+                    find = cross-BU search)
   dv sent|clicks|opens|bounces|unsubs|notsent|send  data-view reads via SOAP
                     event objects (read-only; BEST option for tracking data;
                     server-side filters: --since 7d --send-id N --limit N)
@@ -57,7 +58,9 @@ Commands:
   ens callbacks|subs  event-notification webhooks (what streams where)
   users list        platform users (read-only)
   folders [--type T]  content folders → categoryId for de/query create
-  query list|run|status           SQL-on-platform query orchestration (run = gated write)
+  query list|run|status|validate|create|get|update|delete
+                    SQL-on-platform query orchestration (run = gated write;
+                    create/update/delete = gated; --diff = dry run)
   md types|pull <type>  metadata retrieves to files (journeys, automations, ...)
   asset search|pull deliver assets to ~/.mcecli/work/<profile>/asset/ (index + bodies)
   api               explore the REST API surface: mcecli api <section> [--filter X]

@@ -28,6 +28,11 @@ var errorKB = []errPattern{
 	{"Client authentication failed", "Same as invalid_client — credentials don't match an active installed package", "Verify in SFMC Setup > Installed Packages", "fatal"},
 	{"not accessible for this account", "The credential doesn't have access to the requested BU (account_id)", "Check package access in SFMC Setup, or use a credential scoped to that BU", "recoverable"},
 	{"Filter is invalid", "The API returned a filter error — usually a scope or permission issue on the package", "Check installed package scopes in SFMC Setup", "recoverable"},
+	{"is not valid: 'objectTypeId'", "Automation activities need a numeric activity type: REST queryactivity=43, legacy program query=300", "Curated path: mcecli query create + query run; automation activity bodies carry objectTypeId 43 for query steps", "recoverable"},
+	{"field is required: 'startDate'", "Scheduling via PATCH /automations/{id} uses startSource.schedule.startDate — NOT the top-level schedule model (startDateTime there is ignored)", "Body: {\"startSource\":{\"typeId\":1,\"schedule\":{\"startDate\":\"<RFC3339>\",\"timezoneId\":<numeric>,\"iCalRecur\":\"FREQ=HOURLY;INTERVAL=1\"}}} — verified recipe in docs/dev/endpoint-notes.md", "recoverable"},
+	{"field is required: 'timezoneId'", "The schedule timezoneId is a numeric enum id, not a timezone name", "Pass the numeric id (names fail with 'Location Unknown')", "recoverable"},
+	{"field is required: 'Steps'", "automations/{id}/actions/start requires the full undocumented step serialization — not practical via raw REST", "Run the underlying query via mcecli query run, or rely on the schedule window; runtime start stays a UI path", "recoverable"},
+	{"Location Unknown", "JSON deserialization hit an enum value it could not map — typically timezoneId given as a timezone name", "Use numeric enum ids in schedule bodies", "recoverable"},
 	{"UsernameToken is expected", "SOAP auth rejected the token format — mcecli uses bare fueloauth, this should not happen", "Report as a bug if seen", "fatal"},
 	{"security header is not present", "SOAP auth header missing or malformed", "mcecli handles this; report as a bug if seen", "fatal"},
 	{"Primary key", "A row with this PK already exists (for POST/insert) or the PK field is wrong", "Use PUT for upsert, or check field names with mcecli de get", "recoverable"},
@@ -75,6 +80,9 @@ func cmdExplain(args []string, stdout, stderr io.Writer) int {
 			})
 			_ = output.Print(e, false, stdout)
 			matched = true
+			// envelope contract: ONE JSON document on stdout — the KB is
+			// ordered specific-first, so the first match is the answer
+			break
 		}
 	}
 	if !matched {

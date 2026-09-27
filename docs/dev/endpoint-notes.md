@@ -332,6 +332,34 @@ When SFMC returns `{"message":"Not Authorized"}` on a write:
 | GET /automation/v1/automations/instance/{instanceId} | UNVERIFIED | 404 with automation id (instance ids differ; lastRunInstanceId field exists on list items) |
 | POST /{key}/actions/runallonce, /trigger | NOT IMPLEMENTED | gated writes, deliberately deferred |
 
+### Scheduling, pause, start — VERIFIED LIVE 2026-09-27 (round-7 field test)
+
+- **There is NO `/schedule` route** and **no pause/resume route** — proven via
+  the discovery index (only `actions/start` and `actions/runallonce` exist).
+  Scheduling is done by PATCHing the automation itself.
+- **WORKING schedule recipe** (live-verified):
+  `PATCH /automation/v1/automations/{guid}` body:
+  `{"startSource":{"typeId":1,"schedule":{"startDate":"<RFC3339>","timezoneId":5,"iCalRecur":"FREQ=HOURLY;INTERVAL=1;COUNT=2"}}}`
+  - `timezoneId` is an UNDOCUMENTED NUMERIC ENUM (timezone names fail with
+    `JSON Deserialization Exception: Location Unknown`); 5 = Central US.
+  - `startDate` (inside startSource.schedule) — the top-level
+    `startDateTime`/`recurrenceType` model is silently IGNORED.
+- **PLATFORM LENIENCY HAZARD**: malformed/ignored schedule payloads (wrong
+  model, `scheduleStatus` toggles) return `200 OK` with NO effect — the
+  automation detail (`mcecli auto <key>`) is the only truth for whether a
+  schedule attached.
+- **API-created schedules start PAUSED** (statusId 4, scheduleStatus
+  "paused") — that is the platform default, not an action.
+- **Pause/resume via API: not available.** `POST .../actions/pause` → 404;
+  `PATCH scheduleStatus` → silent no-op; `POST actions/start` → 400 `field
+  is required: 'Steps'` (undocumented step serialization) even with
+  `Steps: []`. Runtime start/pause/resume stay UI-only paths.
+- **REST-created query activities carry objectTypeId 43** (live-verified;
+  legacy program-era query = 300). Step `name` may come back empty for
+  REST-created automations even when set at create (platform quirk).
+- **healthreport only covers automations that RAN in the last 30 days** —
+  never-run automations do not appear (use `mcecli auto list`).
+
 ## SOAP Describe — BLOCKED on the reference org (2026-09-17)
 Every envelope style (unprefixed xmlns body, tns-prefixed, outer
 DescribeRequest wrapper, +ContinueRequest variants) → HTTP 200,

@@ -211,3 +211,40 @@ Round-6 verdict: 5 shipped, 2 deferred, several rejected with rationale.
 Lesson: a coverage matrix is only useful if stale rows are corrected the
 moment they're noticed — a wrong "❌ missing" row costs a future session
 the same probe twice.
+
+---
+
+## Round 7 — independent agent E2E field test (2026-09-27)
+
+A fresh agent session (no knowledge of this codebase) ran the full
+lifecycle on the dev account via the installed binary only: DE create →
+rows → read → 2nd DE → saved query → run → automation with query step →
+schedule → pause → health. Every reported finding was **reproduced against
+the live tenant before any fix** (verify, don't trust):
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | `rest --fields` emptied collection envelopes (data:{}) — agents conclude "object doesn't exist" | VERIFIED → **FIXED**: projection now applies to collection items |
+| 2 | `rest --query` silently dropped ($filter/$page had no effect) | VERIFIED at wire level → **FIXED**: root cause was `TrimPrefix(k,"$")` — SFMC OData params require the $; rowset endpoints tolerate $-less names, masking it |
+| 3 | Scheduling = raw-REST tribal knowledge; malformed payloads return 200 OK with NO effect | VERIFIED (platform leniency) → **DOCUMENTED**: verified recipe (startSource.schedule + numeric timezoneId) in endpoint-notes + SKILL; silent-200 pitfall recorded |
+| 4 | No pause/resume route; API-created schedules born paused; actions/start needs undocumented Steps | VERIFIED (platform: 404 / silent no-op / 400) → **DOCUMENTED** as platform limitation + `auto <key>` paused-schedule hint |
+| 5 | `de create` / query family missing from both help surfaces | VERIFIED → **FIXED** (top usage + `help de` now list create/delete; query family complete) |
+| 6 | `folders` hint wrong for automations; singular type → empty, no suggestion | VERIFIED → **FIXED** (type-aware hints + plural suggestion) |
+| 7 | `auto --expand-queries` empty; objectTypeId 43 labeled "import" | VERIFIED → **FIXED**: live evidence shows REST queryactivity = 43 → label "query"; "43=import" community guess removed; legacy 300 still "query" |
+| 8 | `auto <key>` hides schedule (statusId, startDate, recurrence, tz) | VERIFIED → **FIXED**: statusId + schedule summary surface, paused-schedules get an explicit hint |
+| 9 | objectTypeId error unexplainable | VERIFIED → **FIXED**: 5 new explain KB entries (objectTypeId enum, startDate/timezoneId/Steps requirements, Location Unknown) |
+| 10 | `auto health` misses never-run automations; --limit silent | half-VERIFIED: never-run absence is platform behavior → documented in the health hint; "--limit silently truncates" **REJECTED** — the loud cap hint has existed since round 3 (agent missed it) |
+| 11 | `de rows` returns lowercased field names + `(key)` marker | VERIFIED platform-side (raw rowset returns lowercase) → **DOCUMENTED** in SKILL (not tool-fixable without schema lookups) |
+| 12 | `--help` raw flag dump; gate refusals exit 2; `use` BU-empty hint | NOTED — gate exit 2 = usage-error class by design; BU hint deferred; low priority |
+
+Also verified smooth: envelope contract, write gates, de create, de add
+batch, query validate/run, api discovery, session isolation, journal.
+Agent test objects (AGT_*) remain on the dev account (no deletions, per
+the scenario rules).
+
+Round-7 verdict: 7 verified+fixed, 3 verified+documented (platform), 1
+rejected (with evidence), 1 deferred (minor UX).
+Process note: this round's biggest catch (#2) shipped in round 2 because
+its test asserted the buggy behavior against an endpoint that tolerates
+$-less params. Wire assertions must use endpoints that REJECT malformed
+forms, not ones that tolerate them.

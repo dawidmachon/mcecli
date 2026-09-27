@@ -49,6 +49,9 @@ const usageDE = `mcecli de — data extension commands (list/get/rows/dump are r
   mcecli de add   <key|name> --data @rows.ndjson --write [--batch-size 200]
                file rows: NDJSON lines, JSON array, or {"items":[...]} —
                each row is a FLAT object; chunked async upserts
+  mcecli de create <name> --field "Col:Type(len)" --category ID --write
+               — create a DE (fields repeatable; pk via pk suffix; needs a
+               categoryId: mcecli folders --type dataextension)
   mcecli de delete <key|name> --write --confirm — PERMANENTLY delete the DE
                (auto-captures an undo image first: mcecli undo list)
   mcecli de find  <key|name>     — search ALL configured BUs + account level

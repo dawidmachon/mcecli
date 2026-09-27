@@ -256,9 +256,29 @@ func autoDetail(args []string, stdout, stderr io.Writer) int {
 		"key":         str(m, "key"),
 		"name":        str(m, "name"),
 		"status":      str(m, "status"),
+		"statusId":    m["statusId"],
 		"lastRunTime": str(m, "lastRunTime"),
 		"description": str(m, "description"),
 		"steps":       steps,
+	}
+	// schedule: surface it — API-created schedules start PAUSED and the
+	// curated view used to hide whether a schedule was attached at all
+	// (round-7 field report)
+	if sm2, ok := m["schedule"].(map[string]any); ok {
+		sched := map[string]any{}
+		for _, k := range []string{"scheduleStatus", "startDate", "iCalRecur", "timezoneId", "typeId"} {
+			if v, ok := sm2[k]; ok && v != nil {
+				sched[k] = v
+			}
+		}
+		if ss, ok := sm2["startSource"].(map[string]any); ok {
+			if t, ok := ss["typeId"]; ok {
+				sched["startSourceTypeId"] = t
+			}
+		}
+		if len(sched) > 0 {
+			data["schedule"] = sched
+		}
 	}
 
 	// --expand-queries: resolve query activities (objectTypeId 300) against
@@ -341,6 +361,11 @@ func autoDetail(args []string, stdout, stderr io.Writer) int {
 
 	e := output.OK(st, data)
 	e.Hint = "health context: mcecli auto health"
+	if sched, ok := data["schedule"].(map[string]any); ok {
+		if s, ok := sched["scheduleStatus"].(string); ok && s == "paused" {
+			e.Hint = "schedule attached but PAUSED (API-created schedules start paused; no API pause/resume route) — scheduling recipe: docs/dev/endpoint-notes.md; health context: mcecli auto health"
+		}
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }
@@ -400,7 +425,7 @@ func autoHealth(args []string, stdout, stderr io.Writer) int {
 	}
 	e := output.OK(st, out)
 	e.Count = len(out)
-	e.Hint = "sorted by platform; watch 30DaySuccessRate < 100 and 30DayErrorCount > 0"
+	e.Hint = "sorted by platform; watch 30DaySuccessRate < 100 and 30DayErrorCount > 0 — NEVER-RUN automations do not appear in this report (it covers 30-day executions): mcecli auto list for the full inventory"
 	if limit > 0 && total > len(out) {
 		// never truncate a diagnostic report silently — the whole point of
 		// this command is "what is failing"; a quiet cap would ship false
@@ -530,11 +555,15 @@ func looksLikeGUID(s string) bool {
 func scannedCount(items []any) int { return len(items) }
 
 // automationActivityTypes maps Automation Studio objectTypeId values to
-// labels (community mapping; verified on the reference org: 300=query activities,
-// 43=import activities by name convention).
+// labels. LIVE-VERIFIED 2026-09-27: an activity created via REST as
+// queryactivity carries objectTypeId 43 (the earlier "43=import" community
+// guess was wrong and broke --expand-queries for REST-built automations).
+// 300 is the legacy Program-era query type. Not exhaustively verified:
+// 42/45/73/550/728 follow the community mapping.
 var automationActivityTypes = map[int64]string{
 	300: "query",
-	43:  "import",
+	43:  "query",
+	45:  "import",
 	42:  "script",
 	467: "wait",
 	73:  "report",

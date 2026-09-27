@@ -85,6 +85,11 @@ func cmdRest(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, usageRest)
 		return exitUsage
 	}
+	if c.raw && c.fields != "" {
+		e := output.Fail(0, "--fields cannot be combined with --raw (--raw prints the platform response verbatim)", "drop --raw for the projected envelope")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
 	method := strings.ToUpper(rest[0])
 	path := rest[1]
 
@@ -122,7 +127,10 @@ func cmdRest(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// shell-safe query-string handling (GET): --query/--page/--size assemble
-	// the URL so agents never fight ?/&/$ shell quoting
+	// the URL so agents never fight ?/&/$ shell quoting. Keys pass through
+	// VERBATIM — SFMC OData params REQUIRE the leading $ ($filter/$page/
+	// $pageSize); stripping it silently disabled the params on every OData
+	// endpoint (round-7 field report).
 	if method == http.MethodGet {
 		u, perr := url.Parse(full)
 		if perr != nil {
@@ -137,7 +145,7 @@ func cmdRest(args []string, stdout, stderr io.Writer) int {
 					continue
 				}
 				k, v, _ := strings.Cut(kv, "=")
-				q.Set(strings.TrimPrefix(k, "$"), v)
+				q.Set(k, v)
 			}
 		}
 		if pageArg > 0 {
@@ -226,12 +234,35 @@ func cmdRest(args []string, stdout, stderr io.Writer) int {
 		return exitAPI
 	}
 	if c.raw {
+		if c.fields != "" {
+			e := output.Fail(0, "--fields cannot be combined with --raw (--raw prints the platform response verbatim)", "drop --raw for the projected envelope")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitUsage
+		}
 		_, _ = stdout.Write(resp)
 		fmt.Fprintln(stdout)
 		return exitOK
 	}
 	e := envelopeFor(status, resp)
-	e.Data = output.Project(e.Data, splitFields(c.fields))
+	e.Data = projectRestData(e.Data, splitFields(c.fields))
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
+}
+
+// projectRestData applies --fields to REST responses. For collection
+// envelopes ({items:[…], count}) the projection applies to each ITEM —
+// projecting the top-level map used to silently replace the whole
+// collection with {} (round-7 field report: agents concluded "the object
+// doesn't exist"). Non-collection objects project at the top level.
+func projectRestData(data any, fields []string) any {
+	if len(fields) == 0 {
+		return data
+	}
+	if m, ok := data.(map[string]any); ok {
+		if items, ok := m["items"].([]any); ok {
+			m["items"] = output.Project(items, fields)
+			return m
+		}
+	}
+	return output.Project(data, fields)
 }

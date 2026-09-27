@@ -70,7 +70,19 @@ func cmdFolders(args []string, stdout, stderr io.Writer) int {
 	}
 	e := output.OK(200, out)
 	e.Count = len(out)
-	e.Hint = "use these IDs as --category on de create / query create"
+	switch {
+	case len(out) == 0 && typeFilter != "":
+		suggestion := ""
+		if !strings.HasSuffix(strings.ToLower(typeFilter), "s") {
+			suggestion = " — plural form? try --type " + typeFilter + "s"
+		}
+		e.Hint = "no folders match this ContentType" + suggestion +
+				" (e.g. dataextension, queryactivity, automations, publication)"
+	case strings.Contains(strings.ToLower(typeFilter), "automation"):
+		e.Hint = "automations folders feed the categoryId in the REST automation-create body (NOT de/query create --category)"
+	default:
+		e.Hint = "use these IDs as --category on de create / query create"
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }

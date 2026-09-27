@@ -94,6 +94,12 @@ user's explicit approval. The tool names the reason when it refuses.
     mcecli rest POST   data/v1/async/dataExtensions/{guid}/rows --write --body @rows.json
     mcecli rest DELETE <path> --write --confirm          # destructive
     mcecli rest POST   interaction/v1/interactions/{id}/stop --write --confirm   # stops a LIVE journey
+    mcecli rest PATCH  automation/v1/automations/{guid} --write --body '{"startSource":{"typeId":1,"schedule":{"startDate":"2026-12-01T08:00:00Z","timezoneId":5,"iCalRecur":"FREQ=HOURLY;INTERVAL=1"}}}'
+    # schedules the automation (timezoneId = NUMERIC enum, 5=Central US).
+    # API-created schedules start PAUSED and there is NO API pause/resume/start
+    # route (platform) — malformed schedule payloads return 200 OK with NO
+    # effect, so ALWAYS verify: mcecli auto <key>  (recipe + pitfalls in
+    # docs/dev/endpoint-notes.md → Automations REST → Scheduling)
 
 Verified write patterns on this platform:
 - Create DE: POST data/v1/customObjects (needs categoryId + FULL field objects;
@@ -163,7 +169,7 @@ Verified write patterns on this platform:
 
 | Task | Use | Why |
 |---|---|---|
-| read a few rows | `mcecli de rows <key> --size N` | sync, cheap, projected |
+| read a few rows | `mcecli de rows <key> --size N` | sync, cheap, projected; field names come back LOWERCASED by the platform, PK fields marked `(key) name` |
 | scan/analyze many rows | `mcecli de dump <key>` then grep locally | data stays out of context |
 | locate a DE across BUs | `mcecli de find <name>` | DEs are per-BU contexts |
 | recently changed assets/templates | see recipe below | asset API supports date filters + orderBy |
