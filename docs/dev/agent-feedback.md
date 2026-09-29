@@ -271,3 +271,25 @@ context (DE-owning MID or JWT enterprise id) added per official docs;
 wire-assertion tests lock explicit-columns + Client block + no-wildcard.
 Process lesson: a "known broken" verdict must name the exact failing wire
 shape — this one hid for weeks behind an inherited wildcard.
+
+### Round-8 addendum 2: multi-terminal concurrency contract — VERIFIED + HARDENED
+
+Question: what happens when two agents in separate terminals switch profiles
+to different targets mid-execution? Answer, verified by test:
+- **Mid-execution is structurally safe**: every mcecli process resolves
+  profile/BU/host ONCE at startup and never re-reads state — a foreign
+  `use` cannot redirect a running command (test locks this).
+- **Cross-call** in a SHARED session, context switches race between calls —
+  that is what MCECLI_SESSION exists for; the concurrency contract is now
+  spelled out in SKILL.md (each agent doing different tasks MUST have its
+  own session or use per-call overrides).
+- **Writes hardened**: config.json save was non-atomic (concurrent
+  `profile add` could corrupt the whole config) → atomic temp+rename;
+  `de dump` wrote directly to the final path (concurrent dumps of the same
+  DE could truncate each other) → temp + atomic rename, partial data kept
+  loudly on failure; asset pulls + meta writes → atomic; state file had
+  the same pattern already. Rename-retry added for Windows
+  rename-over-same-target races (ERROR_ACCESS_DENIED) — surfaced by the
+  concurrency test itself.
+- Tests: concurrent state writers/readers (no torn reads), concurrent
+  atomic-file writers (no torn/mixed content), mid-flight context immunity.

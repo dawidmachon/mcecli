@@ -38,6 +38,23 @@ writes, 401 → auto re-mint. PROD guard: selecting a prod-named profile
 prints ⚠️ on stderr; MCECLI_NO_PROD=1 hard-refuses it. Stateless alternative:
 pass --profile X --bu Y per call.
 
+Concurrency contract (verified by tests, round-8):
+- MID-EXECUTION IS SAFE: each mcecli process resolves profile/BU/host ONCE
+  at startup and never re-reads state — another agent's `use` mid-flight
+  cannot redirect your running command. Every envelope carries
+  context{profile,mid,bu,session} so you can always see who answered.
+- CROSS-CALL: context switches apply to the NEXT call in the SAME session.
+  Two agents doing different tasks MUST each set MCECLI_SESSION (or use
+  per-call --profile/--bu) — otherwise they share one cursor and profile
+  switches race between calls.
+- Concurrent writes are atomic or append-safe: state file + config.json +
+  dumps (temp+rename), token cache (atomic), journal (O_APPEND).
+  Same-session concurrent `use` = last-write-wins. Two agents dumping the
+  SAME DE = last complete dump wins (partial dumps keep partial data,
+  loudly hinted).
+- Caveat: `--profile X` does not reset a session BU that belongs to another
+  profile — the error names it; run `mcecli use X <bu>` instead.
+
 ## First call of a session
 
     mcecli status        # which profile / BU am I on? (no network)

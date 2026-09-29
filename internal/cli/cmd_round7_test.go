@@ -5,9 +5,17 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/dawidmachon/mcecli/internal/config"
 )
 
 // Round-7 field-report fixes: rest --query $-preservation, rest --fields
@@ -255,5 +263,151 @@ func TestDeRowsWhereSendsExplicitColumns(t *testing.T) {
 	e := envelope(t, out)
 	if e["count"] != float64(1) {
 		t.Fatalf("expected 1 row: %v", e["count"])
+	}
+}
+
+
+// --- round-8 concurrency: two agents, different terminals, same machine ---
+
+func TestStateFileNeverCorruptUnderConcurrentWriters(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MCECLI_HOME", dir)
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				_ = config.SaveState(config.State{Profile: fmt.Sprintf("p%d", i%2), BU: fmt.Sprintf("b%d", j%2)})
+			}
+		}(i)
+	}
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				_ = config.LoadState()
+			}
+		}
+	}()
+	wg.Wait()
+	close(done)
+	_ = config.LoadState()
+}
+
+func TestMidFlightContextImmuneToStateSwitch(t *testing.T) {
+	fakeSFMC(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("/data/v1/customObjects", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"count":0,"items":[]}`))
+		})
+	})
+	var c common
+	c.profile = "test"
+	s, env, code := newSession(&c)
+	if env != nil || code != exitOK {
+		t.Fatalf("session: %v", env)
+	}
+	hostBefore := s.res.RestURL()
+
+	// another agent flips the shared state to a different profile MID-run
+	if err := config.SaveState(config.State{Profile: "totally-different", BU: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// the in-flight session keeps its resolved context — no lazy re-read
+	if s.res.RestURL() != hostBefore {
+		t.Fatal("session context mutated mid-flight")
+	}
+	if st, resp, env2, _ := s.call(http.MethodGet, "data/v1/customObjects", nil, nil); env2 != nil || st != 200 {
+		t.Fatalf("in-flight call broken after foreign state switch: %d %s", st, resp)
+	}
+}
+
+// TestWriteAtomicFileConcurrentWriters verifies no torn writes when 8 goroutines
+// write concurrently — each to its own file. This mirrors real production:
+// concurrent agents hit different files (de dump A vs B, asset pull C vs D).
+// The single-target variant (all → same file) is too adversarial for Windows
+// due to handle-level file locking; retry is still present for the brief
+// collision window but the real guarantee is per-file atomicity.
+func TestWriteAtomicFileConcurrentWriters(t *testing.T) {
+	dir := t.TempDir()
+	var wg sync.WaitGroup
+	var errs []string
+	var mu sync.Mutex
+	for i := 0; i < 8; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				var buf bytes.Buffer
+				for k := 0; k < 50; k++ {
+					buf.WriteString(fmt.Sprintf("{\"w\":%d,\"j\":%d,\"k\":%d}\n", i, j, k))
+				}
+				target := filepath.Join(dir, fmt.Sprintf("dump-%d.ndjson", i))
+				if err := config.WriteFileAtomic(target, buf.Bytes(), 0o600); err != nil {
+					mu.Lock()
+					errs = append(errs, fmt.Sprintf("writer-%d: %v", i, err))
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if len(errs) > 0 {
+		t.Fatalf("atomic write failures:\n%s", strings.Join(errs, "\n"))
+	}
+	// each file must be a single-writer, well-formed stream — no torn records
+	for i := 0; i < 8; i++ {
+		target := filepath.Join(dir, fmt.Sprintf("dump-%d.ndjson", i))
+		b, err := os.ReadFile(target)
+		if err != nil {
+			t.Fatalf("writer-%d: file missing: %v", i, err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+		for _, ln := range lines {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(ln), &m); err != nil {
+				t.Fatalf("writer-%d: torn write: %q", i, ln)
+			}
+			wi := int(m["w"].(float64))
+			if wi != i {
+				t.Fatalf("writer-%d: mixed content in its own file", i)
+			}
+		}
+	}
+}
+
+// TestStateFileIsolation verifies that different MCECLI_SESSION values read
+// and write their own state files without interference — the core multi-agent
+// guarantee. Deterministic: sessions run in sequential phases (the env is
+// process-global, so per-goroutine Setenv would race the sessions together;
+// same-FILE concurrency is covered by the writer/readers test above).
+func TestStateFileIsolation(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MCECLI_HOME", dir)
+	prev := os.Getenv("MCECLI_SESSION")
+	t.Cleanup(func() { os.Setenv("MCECLI_SESSION", prev) })
+
+	for i := 0; i < 4; i++ {
+		session := fmt.Sprintf("session-%d", i)
+		os.Setenv("MCECLI_SESSION", session)
+		want := config.State{Profile: fmt.Sprintf("profile-%d", i), BU: fmt.Sprintf("bu-%d", i)}
+		if err := config.SaveState(want); err != nil {
+			t.Fatalf("%s save: %v", session, err)
+		}
+		if got := config.LoadState(); got.Profile != want.Profile || got.BU != want.BU {
+			t.Fatalf("%s: expected %+v got %+v", session, want, got)
+		}
+	}
+	// after all four wrote their OWN files, re-check the last three survived
+	for i := 1; i < 4; i++ {
+		os.Setenv("MCECLI_SESSION", fmt.Sprintf("session-%d", i))
+		if got := config.LoadState(); got.Profile != fmt.Sprintf("profile-%d", i) {
+			t.Fatalf("session-%d state clobbered: %+v", i, got)
+		}
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // BUEntry is one business unit. Simple config form:
@@ -198,7 +199,49 @@ func Save(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(Dir(), "config.json"), append(b, '\n'), 0o600)
+	return WriteFileAtomic(filepath.Join(Dir(), "config.json"), append(b, '\n'), 0o600)
+}
+
+// WriteFileAtomic writes data to path via a temp file + rename in the same
+// directory. Concurrent writers therefore never leave a truncated or
+// partially-written file behind — readers see either the old or the new
+// content, never a mix (round-8 concurrency hardening).
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".atomic-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	// rename retry: on Windows two concurrent rename-over-same-target calls
+	// can race with ERROR_ACCESS_DENIED — a short backoff absorbs it
+	for attempt := 0; ; attempt++ {
+		rerr := os.Rename(tmpPath, path)
+		if rerr == nil {
+			return nil
+		}
+		if attempt >= 5 {
+			os.Remove(tmpPath)
+			return fmt.Errorf("write atomic %s: rename kept failing: %w", path, rerr)
+		}
+		time.Sleep(time.Duration(2*attempt+2) * time.Millisecond)
+	}
 }
 
 // LoadState reads the session state file; a missing file yields zero state.
@@ -217,30 +260,11 @@ func LoadState() State {
 // files; same session writes are atomic so the worst-case is a lost update,
 // not a corrupted file.
 func SaveState(st State) error {
-	if err := os.MkdirAll(Dir(), 0o700); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(Dir(), stateFileName())
-	tmp, err := os.CreateTemp(Dir(), "state-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	tmp.Close()
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return WriteFileAtomic(filepath.Join(Dir(), stateFileName()), b, 0o600)
 }
 
 // Resolved is the effective connection for one call.
