@@ -207,3 +207,53 @@ func TestProjectRowFieldsUnit(t *testing.T) {
 		t.Fatalf("nil fields must pass through")
 	}
 }
+
+// --- round-8: SOAP DE retrieve root cause — wildcard Properties returns 0
+// results; explicit columns work. The --where path must resolve columns
+// from the fields API and send the Client context block. ---
+
+func TestDeRowsWhereSendsExplicitColumns(t *testing.T) {
+	var soapBodies []string
+	fakeSFMC(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("/data/v1/customObjects", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"count":1,"items":[{"id":"guid-9","key":"DE1","name":"DE1"}]}`))
+		})
+		mux.HandleFunc("/data/v1/customObjects/guid-9/fields", func(w http.ResponseWriter, r *http.Request) {
+			t.Logf("FIELDS HIT %s", r.URL.Path)
+			_, _ = w.Write([]byte(`{"fields":[{"name":"EmailAddress","isPrimaryKey":true},{"name":"Counter"}]}`))
+		})
+		mux.HandleFunc("/Service.asmx", func(w http.ResponseWriter, r *http.Request) {
+			b := make([]byte, 8192)
+			n, _ := r.Body.Read(b)
+			soapBodies = append(soapBodies, string(b[:n]))
+			_, _ = w.Write([]byte(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><RetrieveResponseMsg xmlns="http://exacttarget.com/wsdl/partnerAPI"><OverallStatus>OK</OverallStatus><RequestID>r1</RequestID><Results><EmailAddress>a@b.c</EmailAddress><Counter>1</Counter></Results></RetrieveResponseMsg></soap:Body></soap:Envelope>`))
+		})
+	})
+	code, out, _ := run(t, "de", "rows", "DE1", "--where", "emailaddress=a@b.c")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	if len(soapBodies) != 1 {
+		t.Fatalf("expected one SOAP request, got %d", len(soapBodies))
+	}
+	wire := soapBodies[0]
+	// THE root-cause assertion: explicit columns, never the wildcard
+	if strings.Contains(wire, "Properties>*</Properties>") {
+		t.Fatalf("wildcard Properties must never be sent: %s", wire)
+	}
+	for _, want := range []string{"<tns:Properties>EmailAddress</tns:Properties>", "<tns:Properties>Counter</tns:Properties>", "<tns:ObjectType>DataExtensionObject[DE1]</tns:ObjectType>"} {
+		if !strings.Contains(wire, want) {
+			t.Fatalf("wire missing %q: %s", want, wire)
+		}
+	}
+	// Client context: best-effort — the fake token carries no eid claim, so
+	// the block must be ABSENT here (soap-level test asserts it with a JWT)
+	if strings.Contains(wire, "<tns:Client>") {
+		t.Fatalf("token has no eid — Client block must not be fabricated: %s", wire)
+	}
+	// and the row actually came back
+	e := envelope(t, out)
+	if e["count"] != float64(1) {
+		t.Fatalf("expected 1 row: %v", e["count"])
+	}
+}

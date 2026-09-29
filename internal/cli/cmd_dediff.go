@@ -93,7 +93,13 @@ func deDiff(args []string, stdout, stderr io.Writer) int {
 			if len(pk) == 0 {
 				continue
 			}
-			rows, err := soapRetrieveFiltered(s, key, pk)
+			// explicit columns: wildcard <Properties>*</Properties> returns
+			// 0 results on DataExtensionObject retrieves (root-caused round-8)
+			cols := make([]string, 0, len(lr))
+			for k := range lr {
+				cols = append(cols, strings.TrimPrefix(k, "(key) "))
+			}
+			rows, err := soapRetrieveFiltered(s, key, pk, cols)
 			if err != nil {
 				continue
 			}
@@ -289,6 +295,6 @@ func pkOverrideFields(pk string) []string {
 	return out
 }
 
-func soapRetrieveFiltered(s *session, key string, pk map[string]string) ([]map[string]string, error) {
-	return soap.RetrieveDERows(context.Background(), s.res.SoapURL(), s.tok.AccessToken, key, pk)
+func soapRetrieveFiltered(s *session, key string, pk map[string]string, columns []string) ([]map[string]string, error) {
+	return soap.RetrieveDERows(context.Background(), s.res.SoapURL(), s.tok.AccessToken, key, pk, columns)
 }

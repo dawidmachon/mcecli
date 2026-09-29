@@ -397,12 +397,51 @@ func deRows(args []string, stdout, stderr io.Writer) int {
 				`format: --where "field=value[,field2=value2]"`), c.pretty, stdout)
 			return exitUsage
 		}
+		// ROOT-CAUSED (round-8): DataExtensionObject retrieves with wildcard
+		// <Properties>*</Properties> return 0 results on this platform —
+		// explicit column lists work (filter casing is irrelevant). Never
+		// send the wildcard: resolve the column names from the fields API.
+		m2, denv := resolveDE(s, key)
+		if denv != nil {
+			_ = output.Print(denv, c.pretty, stdout)
+			return exitAPI
+		}
+		key = m2.Key
 		var cols []string
 		if pf := splitFields(c.fields); len(pf) > 0 {
 			cols = pf
+		} else {
+			if fl, ok := fetchFields(s, m2.ID); ok {
+				if fm, ok2 := parseJSON(fl).(map[string]any); ok2 {
+					if farr, ok3 := fm["fields"].([]any); ok3 {
+						for _, f := range farr {
+							if fo, ok4 := f.(map[string]any); ok4 {
+								if n, ok5 := fo["name"].(string); ok5 && n != "" {
+									cols = append(cols, n)
+								}
+							}
+						}
+					}
+				}
+			}
+			if len(cols) == 0 {
+				e := output.Fail(0, "cannot resolve DE columns for the SOAP retrieve",
+					"pass --fields with explicit column names (mcecli de get "+key+" --fields name)")
+				_ = output.Print(e, c.pretty, stdout)
+				return exitAPI
+			}
+		}
+		// DE-owning MID context: res.MID when a BU is pinned; otherwise the
+		// JWT enterprise id (account-level context) — without a Client block
+		// the server may answer 0 rows cross-context (docs-listed Client block)
+		clientMID := s.res.MID
+		if clientMID == "" {
+			if eid, ok := auth.JWTEnterpriseID(s.tok.AccessToken); ok {
+				clientMID = strconv.Itoa(eid)
+			}
 		}
 		resultRows, err := soap.RetrieveFilteredRows(context.Background(),
-			s.res.SoapURL(), s.tok.AccessToken, key, cols, filters)
+			s.res.SoapURL(), s.tok.AccessToken, key, cols, filters, clientMID)
 		if err != nil {
 			_ = output.Print(output.Fail(0, err.Error(),
 				"SOAP filtered retrieve requires the DE to have filterable columns; try de rows without --where"), c.pretty, stdout)
@@ -418,7 +457,7 @@ func deRows(args []string, stdout, stderr io.Writer) int {
 		}
 		e := output.OK(200, data)
 		e.Count = len(data)
-		e.Hint = fmt.Sprintf("SOAP filtered retrieve: %d rows (server-side filtering) — CAVEAT: on some tenants SOAP retrieves return 0 rows even for existing keys (known platform issue) — if 0 rows, re-run WITHOUT --where before concluding the data is absent", len(data))
+		e.Hint = fmt.Sprintf("SOAP filtered retrieve: %d rows (server-side filtering; explicit column list — wildcard Properties returns 0 rows, root-caused round-8)", len(data))
 		_ = output.Print(e, c.pretty, stdout)
 		return exitOK
 	}
@@ -598,8 +637,20 @@ func deAdd(args []string, stdout, stderr io.Writer) int {
 
 	// PK fields of this DE (needed for keyed before-image reads)
 	pkFields := []string{}
+	colNames := []string{}
 	if fldResp, ok := fetchFields(s, m.ID); ok {
 		pkFields = pkNamesFromFields(fldResp)
+		if fm, ok2 := parseJSON(fldResp).(map[string]any); ok2 {
+			if farr, ok3 := fm["fields"].([]any); ok3 {
+				for _, f := range farr {
+					if fo, ok4 := f.(map[string]any); ok4 {
+						if n, ok5 := fo["name"].(string); ok5 && n != "" {
+							colNames = append(colNames, n)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if batchSize <= 0 {
@@ -636,7 +687,7 @@ func deAdd(args []string, stdout, stderr io.Writer) int {
 					continue
 				}
 				if before, err := soap.RetrieveDERows(context.Background(),
-					s.res.SoapURL(), s.tok.AccessToken, custKey, pk); err == nil && len(before) > 0 {
+					s.res.SoapURL(), s.tok.AccessToken, custKey, pk, colNames); err == nil && len(before) > 0 {
 					beforeRows = append(beforeRows, mergePKValues(pk, before[0]))
 				}
 			}

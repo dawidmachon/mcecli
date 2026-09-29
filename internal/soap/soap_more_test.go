@@ -6,6 +6,7 @@ package soap
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -66,5 +67,56 @@ func TestRetrieveTokenExpiredRefreshesOnce(t *testing.T) {
 		}})
 	if err != nil || len(rows) != 1 || refreshes != 1 {
 		t.Fatalf("rows=%v refreshes=%d err=%v", rows, refreshes, err)
+	}
+}
+
+// Round-8 root cause lock: DataExtensionObject retrieves must send EXPLICIT
+// columns (wildcard Properties returns 0 results on the platform) and the
+// Client context block when the token carries an eid.
+func TestRetrieveFilteredRowsWire(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := make([]byte, 8192)
+		n, _ := r.Body.Read(b)
+		bodies = append(bodies, string(b[:n]))
+		io.WriteString(w, `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><RetrieveResponseMsg xmlns="http://exacttarget.com/wsdl/partnerAPI"><OverallStatus>OK</OverallStatus><RequestID>r1</RequestID><Results><Properties><Name>EmailAddress</Name><Value>a@b.c</Value></Properties><Properties><Name>Counter</Name><Value>1</Value></Properties></Results></RetrieveResponseMsg></soap:Body></soap:Envelope>`)
+	}))
+	defer srv.Close()
+
+	// fake JWT: header.payload(eid=12345).sig (RawURL base64)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"eid":12345}`))
+	token := "hdr." + payload + ".sig"
+
+	// clientMID comes from the caller (res.MID or the JWT eid fallback)
+	rows, err := RetrieveFilteredRows(context.Background(), srv.URL, token,
+		"DE1", []string{"EmailAddress", "Counter"}, map[string]string{"emailaddress": "a@b.c"}, "12345")
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["EmailAddress"] != "a@b.c" {
+		t.Fatalf("rows wrong: %v", rows)
+	}
+	wire := bodies[0]
+	if strings.Contains(wire, "Properties>*<") {
+		t.Fatalf("wildcard Properties must never be sent: %s", wire)
+	}
+	for _, want := range []string{
+		"<tns:Properties>EmailAddress</tns:Properties>",
+		"<tns:Properties>Counter</tns:Properties>",
+		"<tns:ObjectType>DataExtensionObject[DE1]</tns:ObjectType>",
+		"<tns:Client><tns:ClientID>12345</tns:ClientID></tns:Client>",
+	} {
+		if !strings.Contains(wire, want) {
+			t.Fatalf("wire missing %q: %s", want, wire)
+		}
+	}
+	// no eid in token → no Client block (best-effort)
+	bodies = nil
+	if _, err := RetrieveFilteredRows(context.Background(), srv.URL, "plain-token",
+		"DE1", []string{"EmailAddress"}, nil, ""); err != nil {
+		t.Fatalf("retrieve2: %v", err)
+	}
+	if strings.Contains(bodies[0], "<tns:Client>") {
+		t.Fatalf("Client block must be omitted without an eid: %s", bodies[0])
 	}
 }

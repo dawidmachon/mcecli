@@ -71,21 +71,24 @@ domain_verification      —                         Domain Verification
 | Response shape | VERIFIED | `<Results xsi:type="Account">` with UNPREFIXED children (default partnerAPI ns); `<OverallStatus>` sibling of Results |
 | Paging | UNVERIFIED | ContinueRequest not yet needed/implemented |
 
-## SOAP DE row retrieve — KNOWN BROKEN on the reference org
+## SOAP DE row retrieve — ROOT-CAUSED + FIXED (2026-09-27, round-8)
 
-`RetrieveRequest` with `ObjectType=DataExtensionObject[KEY]`, Properties,
-SimpleFilterPart → returns OverallStatus=OK with 0 Results on EVERY DE
-(proven false negative on a large DE multi-million-row, known-existing value).
-Evidence wire-dumped. Candidate causes, in test order:
+`RetrieveRequest` with `ObjectType=DataExtensionObject[KEY]`, SimpleFilterPart
+→ returned OverallStatus=OK with 0 Results on EVERY DE. ROOT CAUSE
+(isolated by controlled matrix — filter casing × column list):
 
-1. **Missing `<Client><ClientID>` context in RetrieveRequest** — official
-   docs list `Client` = "account ownership and context" on
-   DataExtensionObject. mcecli sends no Client block. If token context ≠
-   DE-owning BU, server may legitimately answer 0 rows. TEST: add
-   ClientID of DE-owning MID, compare.
-2. WS-Addressing headers (official samples include `<a:Action>Retrieve`
-   + `<a:To>` in header) — mcecli omits them; other SOAP calls work without,
-   but DE retrieve may gate on Action. TEST only if (1) fails.
+**`<tns:Properties>*</tns:Properties>` (the wildcard) returns 0 results.**
+With an EXPLICIT column list the identical request returns rows; filter
+property casing is irrelevant (lowercase schema names work). Every earlier
+"known broken" test inherited the wildcard from a shared helper — a
+false-negative chain, not a platform defect.
+
+Additional hardening (docs-listed, kept): `<tns:Client><tns:ClientID>`
+(DE-owning MID, or JWT enterprise id for account-level contexts) is now sent
+on DE retrieves. WS-Addressing headers were NOT needed.
+
+mcecli now resolves the column list from the fields API and never sends the
+wildcard (`de rows --where`, `de add` before-images, `de diff`).
 
 ### DOC-SOURCED facts (sf-docs-scrap, NOT yet validated live)
 | Fact | Source |

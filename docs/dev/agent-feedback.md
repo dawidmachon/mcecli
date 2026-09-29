@@ -257,3 +257,17 @@ the release tag. Caught by the fresh-clone battery, removed via history
 rewrite, tag + release assets re-cut. Standing rules reaffirmed: NEVER
 `git add -A` — stage explicit paths; scrub scripts live outside the repo;
 every release is verified by a fresh-clone battery before being called done.
+
+### Round-8 addendum: `de rows --where` ROOT-CAUSED + FIXED
+
+The "SOAP DE retrieve known broken" issue (0 rows on every DE) fell to a
+controlled matrix — filter casing × column list: the wildcard
+`<Properties>*</Properties>` was the entire cause; explicit column lists
+work with any filter casing. Every earlier "broken" verdict had inherited
+the wildcard from a shared helper. Fixes: `de rows --where` resolves the
+column list from the fields API (never sends the wildcard); `de add`
+before-images and `de diff` get explicit columns too; `<Client><ClientID>`
+context (DE-owning MID or JWT enterprise id) added per official docs;
+wire-assertion tests lock explicit-columns + Client block + no-wildcard.
+Process lesson: a "known broken" verdict must name the exact failing wire
+shape — this one hid for weeks behind an inherited wildcard.
