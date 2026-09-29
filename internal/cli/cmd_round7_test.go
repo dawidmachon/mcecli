@@ -155,3 +155,55 @@ func TestExplainKnowledgeBaseCoversScheduling(t *testing.T) {
 		}
 	}
 }
+
+// --- round-8: de rows --fields must survive platform-lowercased keys and
+// the "(key) " PK marker (agents using schema casing from de get got
+// data:[{},{},{}] — silent empty success) ---
+
+func TestDeRowsFieldsCaseInsensitiveWithPKMarker(t *testing.T) {
+	fakeSFMC(t, func(mux *http.ServeMux) {
+		mux.HandleFunc("/data/v1/customobjectdata/key/DE1/rowset", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"links":{"self":"/v1/customobjectdata/token/T1/rowset"},"requestToken":"T1","count":2,"page":1,"pageSize":2500,"items":[{"keys":{"emailaddress":"a@b.c"},"values":{"fullname":"A One","counter":"1"}},{"keys":{"emailaddress":"x@y.z"},"values":{"fullname":"B Two","counter":"2"}}]}`))
+		})
+	})
+	// schema casing from de get (what agents naturally pass)
+	code, out, _ := run(t, "de", "rows", "DE1", "--fields", "EmailAddress,Counter")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	e := envelope(t, out)
+	items := e["data"].([]any)
+	row := items[0].(map[string]any)
+	if len(row) != 2 || row["EmailAddress"] != "a@b.c" || row["Counter"] != "1" {
+		t.Fatalf("schema-cased --fields must resolve (output keyed as requested): %v", row)
+	}
+	// PK-only projection: the (key)-prefixed row key must resolve too
+	code, out, _ = run(t, "de", "rows", "DE1", "--fields", "emailaddress")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	items = envelope(t, out)["data"].([]any)
+	row = items[1].(map[string]any)
+	if len(row) != 1 || row["emailaddress"] != "x@y.z" {
+		t.Fatalf("PK field must project despite the (key) marker: %v", row)
+	}
+}
+
+func TestProjectRowFieldsUnit(t *testing.T) {
+	rows := []any{
+		map[string]any{"(key) emailaddress": "a@b.c", "fullname": "A", "counter": "1"},
+	}
+	got := projectRowFields(rows, []string{"EMAILADDRESS", "FullName"})
+	row := got.([]any)[0].(map[string]any)
+	if row["EMAILADDRESS"] != "a@b.c" || row["FullName"] != "A" {
+		t.Fatalf("case-insensitive + PK-strip matching broken: %v", row)
+	}
+	// non-collection data passes through untouched
+	if keep := projectRowFields("scalar", []string{"x"}); keep != "scalar" {
+		t.Fatalf("non-collection must pass through: %v", keep)
+	}
+	// nil fields = no projection
+	if same := projectRowFields(rows, nil); len(same.([]any)) != 1 {
+		t.Fatalf("nil fields must pass through")
+	}
+}

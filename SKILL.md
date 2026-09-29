@@ -151,8 +151,8 @@ Verified write patterns on this platform:
   instead of 403 (more permissive). Token scope changes require --refresh
   to take effect (cached tokens keep old scopes until expiry).
 - Row reads have NO server-side filter via REST; for huge DEs use
-  `mcecli de rows <key> --where "Field=value"` (SOAP server-side filter, works on
-  millions of rows in <1s). For broader analysis, `mcecli de dump` and grep locally.
+  `mcecli de rows <key> --where "Field=value"` (SOAP server-side filter — CAVEAT:
+  some tenants return 0 rows even for existing keys; verify without --where). For broader analysis, `mcecli de dump` and grep locally.
 - Data views (_Click, _Open, _Sent, _Bounce) are SOAP-only system DEs —
   NOT accessible via the REST customobjectdata API. Read them with
   `mcecli dv sent|clicks|opens|bounces|unsubs|notsent` (SOAP event objects,

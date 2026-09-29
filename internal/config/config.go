@@ -376,7 +376,7 @@ func Resolve(cfg *Config, st State, profileFlag, buFlag string) (*Resolved, erro
 		} else if isMID(bu) {
 			mid = bu // raw numeric MID passed directly
 		} else {
-			return nil, fmt.Errorf("unknown BU %q in profile %q (have %v) — or pass a raw numeric MID", bu, name, buNames(p))
+			return nil, fmt.Errorf("unknown BU %q in profile %q (have %v) — the session's current BU belongs to another profile and carries over on --profile switches; run 'mcecli use %s <bu>' or pass --bu <name>", bu, name, buNames(p), name)
 		}
 	}
 

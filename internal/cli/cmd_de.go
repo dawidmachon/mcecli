@@ -418,7 +418,7 @@ func deRows(args []string, stdout, stderr io.Writer) int {
 		}
 		e := output.OK(200, data)
 		e.Count = len(data)
-		e.Hint = fmt.Sprintf("SOAP filtered retrieve: %d rows (server-side filtering)", len(data))
+		e.Hint = fmt.Sprintf("SOAP filtered retrieve: %d rows (server-side filtering) — CAVEAT: on some tenants SOAP retrieves return 0 rows even for existing keys (known platform issue) — if 0 rows, re-run WITHOUT --where before concluding the data is absent", len(data))
 		_ = output.Print(e, c.pretty, stdout)
 		return exitOK
 	}
@@ -451,9 +451,53 @@ func deRows(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	normalizeRowset(e)
-	e.Data = output.Project(e.Data, splitFields(c.fields))
+	e.Data = projectRowFields(e.Data, splitFields(c.fields))
+	if c.fields != "" {
+		if arr, ok := e.Data.([]any); ok && len(arr) > 0 {
+			if row, ok := arr[0].(map[string]any); ok && len(row) < len(splitFields(c.fields)) {
+				e.Hint = "some requested fields were not found — row reads return platform-LOWERCASED names and PK fields are stored as '(key) name'; --fields matches case-insensitively either way"
+			}
+		}
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
+}
+
+// projectRowFields projects rowset rows by --fields. Row keys arrive
+// platform-LOWERCASED with PK fields prefixed "(key) " (round-7 + round-8
+// field reports: exact-match projection silently returned empty rows when
+// agents used schema casing from de get). Matching is therefore:
+// exact → case-insensitive → case-insensitive ignoring the (key) prefix.
+// Output keys use the REQUESTED spelling (schema-casing friendly).
+func projectRowFields(data any, fields []string) any {
+	if len(fields) == 0 {
+		return data
+	}
+	items, ok := data.([]any)
+	if !ok {
+		return data
+	}
+	out := make([]any, 0, len(items))
+	for _, it := range items {
+		row, ok := it.(map[string]any)
+		if !ok {
+			out = append(out, it)
+			continue
+		}
+		idx := map[string]string{}
+		for k := range row {
+			idx[strings.ToLower(k)] = k
+			idx[strings.ToLower(strings.TrimPrefix(k, "(key) "))] = k
+		}
+		proj := map[string]any{}
+		for _, f := range fields {
+			if k, ok := idx[strings.ToLower(f)]; ok {
+				proj[f] = row[k]
+			}
+		}
+		out = append(out, proj)
+	}
+	return out
 }
 
 // addWhere registers the --where flag for SOAP filtered retrieves.
