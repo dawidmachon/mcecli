@@ -83,17 +83,17 @@ var soapCatalog = []soapObject{
 	},
 	{
 		objectType: "AccountUser", alias: "users list", use: "platform users (who has access)",
-		props: []prop{{"ID", "live"}, {"UserID", "live"}, {"Name", "live"}, {"Email", "live"}, {"ActiveFlag", "live"}, {"DefaultBusinessUnit", "live"}, {"Delete", "live"}},
-		quirks: []string{"Roles and UserPermissions props are ACCEPTED but return silently EMPTY on retrieve (UserPermissions documented \"Not used.\") — user roles live on the Role object, permission values on UserAccess (admin principal required)"},
+		props:  []prop{{"ID", "live"}, {"UserID", "live"}, {"Name", "live"}, {"Email", "live"}, {"ActiveFlag", "live"}, {"DefaultBusinessUnit", "live"}, {"Delete", "live"}},
+		quirks: []string{"Roles and UserPermissions hydrate as NESTED JSON in the row (the flat parser used to silently drop them — fixed 2026-10-12; the SSJS WSProxy pattern always saw them)", "role → permission catalog: soap retrieve Role --props ObjectID,Name,Permissions --filter ObjectID=<role ObjectID> (927-permission role verified live)", "UserAccess (per-user permission values) stays admin-gated"},
 	},
 	{
 		objectType: "Role", alias: "user roles", use: "role catalog (system-defined + account-defined)",
-		props: []prop{{"ObjectID", "live"}, {"Name", "live"}, {"CustomerKey", "live"}, {"IsSystemDefined", "live"}, {"IsPrivate", "live"}},
-		quirks: []string{"RETRIEVABLE live despite the official support matrix marking Role.Retrieve unsupported (stale matrix cell) — props ObjectID/Name/CustomerKey/IsSystemDefined/IsPrivate verified; ID and Value are REJECTED (\"do not match with the fields of Role\")", "Create/Update/Delete per matrix need role-management rights"},
+		props:  []prop{{"ObjectID", "live"}, {"Name", "live"}, {"CustomerKey", "live"}, {"IsSystemDefined", "live"}, {"IsPrivate", "live"}},
+		quirks: []string{"RETRIEVABLE live despite the official support matrix marking Role.Retrieve unsupported (stale matrix cell) — props ObjectID/Name/CustomerKey/IsSystemDefined/IsPrivate verified; ID and Value are REJECTED (\"do not match with the fields of Role\")", "Permissions prop + ObjectID filter returns the FULL nested permission catalog as JSON (927-entry role verified live)", "Create/Update/Delete per matrix need role-management rights"},
 	},
 	{
 		objectType: "UserAccess", alias: "user permissions", use: "permission values per user (docs: retrieve requires an ADMIN principal)",
-		props: []prop{{"Name", "docs"}, {"Value", "docs"}, {"CustomerKey", "docs"}},
+		props:  []prop{{"Name", "docs"}, {"Value", "docs"}, {"CustomerKey", "docs"}},
 		quirks: []string{"valid ObjectType (NOT invalid like PermissionSet/AccountRole) but gated: non-admin principal → \"The specified principal does not have permission to view the requested UserAccess data\""},
 	},
 	{

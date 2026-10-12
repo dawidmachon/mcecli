@@ -17,6 +17,7 @@ package soap
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -199,6 +200,14 @@ func buildFilterXML(filters []Filter) string {
 // parse walks the SOAP response with a streaming decoder: collects direct
 // children of every <Results> block (namespaces stripped), the
 // OverallStatus text, the RequestID, and turns <Fault> into an error.
+//
+// Nested complex properties (depth≥2 under a depth-1 property — e.g.
+// AccountUser.Roles, AccountUser.UserPermissions, Role.Permissions) are
+// captured as a tree and stored in the row as a JSON-ENCODED STRING.
+// Found live 2026-10-12: the platform always returned those subtrees (the
+// SSJS WSProxy consumes them) but the flat parser silently dropped them,
+// leaving empty strings — AccountUser roles/permissions looked unavailable
+// via API when they never were. Scalar properties parse exactly as before.
 func parse(body []byte) ([]map[string]string, string, string, error) {
 	var rows []map[string]string
 	var statusB, requestIDB, faultText strings.Builder
@@ -221,6 +230,10 @@ func parse(body []byte) ([]map[string]string, string, string, error) {
 		ppWhich string // "Name" or "Value" while inside a pair
 		ppText  strings.Builder
 		ppKey   string
+		// nested complex subtree capture (see doc comment)
+		propComplex bool
+		complexRoot *soapNode
+		nodeStack   []*soapNode
 	)
 
 	for {
@@ -238,15 +251,26 @@ func parse(body []byte) ([]map[string]string, string, string, error) {
 				inFault = true
 			case t.Name.Local == "Results" && !inResults:
 				inResults, cur, depth = true, map[string]string{}, 0
+				propComplex, complexRoot = false, nil
+				nodeStack = nodeStack[:0]
 			case inResults:
 				depth++
 				if depth == 1 {
 					prop = t.Name.Local
 					propText.Reset()
 					inPP = prop == "PartnerProperties"
+					propComplex = false
+					complexRoot = nil
+					nodeStack = nodeStack[:0]
 				} else if inPP && depth == 2 {
 					ppWhich = t.Name.Local
 					ppText.Reset()
+				} else if !inPP {
+					if !propComplex {
+						propComplex = true
+						complexRoot = &soapNode{name: prop}
+					}
+					nodeStack = append(nodeStack, &soapNode{name: t.Name.Local})
 				}
 			case t.Name.Local == "OverallStatus":
 				inOverall = true
@@ -257,6 +281,8 @@ func parse(body []byte) ([]map[string]string, string, string, error) {
 			switch {
 			case inPP && depth == 2:
 				ppText.Write(t)
+			case inResults && len(nodeStack) > 0:
+				nodeStack[len(nodeStack)-1].text.Write(t)
 			case inResults && depth == 1:
 				propText.Write(t)
 			case inFault:
@@ -286,8 +312,20 @@ func parse(body []byte) ([]map[string]string, string, string, error) {
 				ppWhich = ""
 				depth--
 			case inResults && depth == 1:
-				if prop != "PartnerProperties" && cur != nil {
+				switch {
+				case propComplex && complexRoot != nil && cur != nil:
+					appendJSONRow(cur, prop, complexRoot.value())
+				case prop != "PartnerProperties" && cur != nil:
 					cur[prop] = strings.TrimSpace(propText.String())
+				}
+				depth--
+			case inResults && len(nodeStack) > 0:
+				n := nodeStack[len(nodeStack)-1]
+				nodeStack = nodeStack[:len(nodeStack)-1]
+				if len(nodeStack) > 0 {
+					nodeStack[len(nodeStack)-1].set(n.name, n.value())
+				} else if complexRoot != nil {
+					complexRoot.set(n.name, n.value())
 				}
 				depth--
 			case inResults:
@@ -303,6 +341,68 @@ func parse(body []byte) ([]map[string]string, string, string, error) {
 		return nil, "", "", fmt.Errorf("SOAP fault: %s", fault)
 	}
 	return rows, strings.TrimSpace(statusB.String()), strings.TrimSpace(requestIDB.String()), nil
+}
+
+// soapNode — one element of a nested complex property subtree. Leaves carry
+// their text; containers carry child elements (repeated names → []any).
+type soapNode struct {
+	name   string
+	text   strings.Builder
+	fields map[string]any
+}
+
+func (n *soapNode) set(name string, v any) {
+	if n.fields == nil {
+		n.fields = map[string]any{}
+	}
+	if old, ok := n.fields[name]; ok {
+		if arr, ok := old.([]any); ok {
+			n.fields[name] = append(arr, v)
+			return
+		}
+		n.fields[name] = []any{old, v}
+		return
+	}
+	n.fields[name] = v
+}
+
+// value — leaves become trimmed text, containers their field map.
+func (n *soapNode) value() any {
+	if n.fields != nil {
+		return n.fields
+	}
+	return strings.TrimSpace(n.text.String())
+}
+
+// appendJSONRow — store a nested subtree in the row as a JSON-encoded
+// string. A single-field wrapper root is unwrapped and normalized to an
+// ARRAY ({"Role":[…]} → […]; {"Role":{…}} → [{…}]) so consumers always
+// iterate the same shape; multi-field roots (inline fields like
+// <UserPermissions><ID>…</ID></UserPermissions>) stay a JSON object.
+// Repeated occurrences of the same property merge into one array.
+func appendJSONRow(row map[string]string, prop string, v any) {
+	if m, ok := v.(map[string]any); ok && len(m) == 1 {
+		for _, fv := range m {
+			v = fv
+		}
+		if _, isArr := v.([]any); !isArr {
+			v = []any{v}
+		}
+	}
+	if old := row[prop]; old != "" {
+		merged := []any{}
+		if err := json.Unmarshal([]byte(old), &merged); err != nil || merged == nil {
+			var single any
+			if err := json.Unmarshal([]byte(old), &single); err == nil {
+				merged = []any{single}
+			}
+		}
+		merged = append(merged, v)
+		v = merged
+	}
+	if b, err := json.Marshal(v); err == nil {
+		row[prop] = string(b)
+	}
 }
 
 // xmlEscape returns s with XML special chars replaced by entity references.

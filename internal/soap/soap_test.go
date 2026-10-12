@@ -6,6 +6,7 @@ package soap
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -325,5 +326,105 @@ func TestSOAPDebugDumpRedactsToken(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "[REDACTED]") {
 		t.Fatalf("dump should contain [REDACTED]: %s", string(b))
+	}
+}
+
+// TestParseNestedComplexPropsAsJSON: nested subtrees (AccountUser.Roles,
+// AccountUser.UserPermissions, Role.Permissions) must reach the row as
+// JSON-encoded strings — the flat parser used to silently drop them while
+// the platform returned the data all along (SSJS WSProxy consumes it).
+func TestParseNestedComplexPropsAsJSON(t *testing.T) {
+	body := `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soap:Body><RetrieveResponseMsg xmlns="http://exacttarget.com/wsdl/partnerAPI">
+    <OverallStatus>OK</OverallStatus>
+    <Results xsi:type="AccountUser">
+      <ID>111</ID><Name>u1</Name>
+      <Roles><Role><Name>admin</Name><ObjectID>o-1</ObjectID><Description>A</Description><CustomerKey>k1</CustomerKey><IsSystemDefined>true</IsSystemDefined></Role><Role><Name>viewer</Name><ObjectID>o-2</ObjectID></Role></Roles>
+      <UserPermissions><ID>35</ID><Value>API-Access</Value></UserPermissions>
+    </Results>
+    <Results xsi:type="AccountUser">
+      <ID>222</ID><Name>u2</Name>
+      <Roles><Role><Name>solo</Name><ObjectID>o-3</ObjectID></Role></Roles>
+    </Results>
+    <Results xsi:type="Role">
+      <ObjectID>o-1</ObjectID><Name>admin</Name>
+      <Permissions><Permission><ID>1</ID><Name>WebService API</Name><ObjectType>API Access</ObjectType><IsShareable>true</IsShareable></Permission><Permission><ID>2</ID><Name>XML API</Name></Permission></Permissions>
+    </Results>
+  </RetrieveResponseMsg></soap:Body>
+</soap:Envelope>`
+	rows, status, _, err := parse([]byte(body))
+	if err != nil || status != "OK" {
+		t.Fatalf("parse failed: %v %q", err, status)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(rows))
+	}
+	// scalar props unchanged
+	if rows[0]["ID"] != "111" || rows[0]["Name"] != "u1" {
+		t.Fatalf("scalar props must parse as before: %v", rows[0])
+	}
+	// Roles: array of 2 role objects (unwrapped from the single-field root)
+	var roles []any
+	if err := json.Unmarshal([]byte(rows[0]["Roles"]), &roles); err != nil {
+		t.Fatalf("Roles must be a JSON array: %v (%q)", err, rows[0]["Roles"])
+	}
+	if len(roles) != 2 {
+		t.Fatalf("expected 2 roles, got %d", len(roles))
+	}
+	r0 := roles[0].(map[string]any)
+	if r0["Name"] != "admin" || r0["ObjectID"] != "o-1" || r0["IsSystemDefined"] != "true" {
+		t.Fatalf("nested role fields must survive: %v", r0)
+	}
+	// UserPermissions: inline wrapper (single object, no unwrap)
+	var up map[string]any
+	if err := json.Unmarshal([]byte(rows[0]["UserPermissions"]), &up); err != nil {
+		t.Fatalf("UserPermissions must be a JSON object: %v (%q)", err, rows[0]["UserPermissions"])
+	}
+	if up["ID"] != "35" || up["Value"] != "API-Access" {
+		t.Fatalf("UserPermissions fields must survive: %v", up)
+	}
+	// single-role row: unwrapped to a 1-element array for iteration-friendly shape
+	var roles2 []any
+	if err := json.Unmarshal([]byte(rows[1]["Roles"]), &roles2); err != nil || len(roles2) != 1 {
+		t.Fatalf("single nested child must unwrap to array: %v (%q)", err, rows[1]["Roles"])
+	}
+	// Role.Permissions
+	var perms []any
+	if err := json.Unmarshal([]byte(rows[2]["Permissions"]), &perms); err != nil {
+		t.Fatalf("Permissions must be a JSON array: %v (%q)", err, rows[2]["Permissions"])
+	}
+	if len(perms) != 2 {
+		t.Fatalf("expected 2 permissions, got %d", len(perms))
+	}
+	p0 := perms[0].(map[string]any)
+	if p0["Name"] != "WebService API" || p0["ObjectType"] != "API Access" || p0["IsShareable"] != "true" {
+		t.Fatalf("permission fields must survive: %v", p0)
+	}
+}
+
+// TestParseRepeatedComplexPropsMerge: repeated depth-1 complex properties
+// (multiple <UserPermissions> blocks) must merge into ONE JSON array.
+func TestParseRepeatedComplexPropsMerge(t *testing.T) {
+	body := `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><RetrieveResponseMsg xmlns="http://exacttarget.com/wsdl/partnerAPI">
+    <OverallStatus>OK</OverallStatus>
+    <Results><ID>1</ID>
+      <UserPermissions><ID>35</ID><Value>a</Value></UserPermissions>
+      <UserPermissions><ID>36</ID><Value>b</Value></UserPermissions>
+    </Results>
+  </RetrieveResponseMsg></soap:Body>
+</soap:Envelope>`
+	rows, _, _, err := parse([]byte(body))
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("parse failed: %v", err)
+	}
+	var up []any
+	if err := json.Unmarshal([]byte(rows[0]["UserPermissions"]), &up); err != nil {
+		t.Fatalf("repeated props must merge into a JSON array: %v (%q)", err, rows[0]["UserPermissions"])
+	}
+	if len(up) != 2 {
+		t.Fatalf("expected 2 merged entries, got %d", len(up))
 	}
 }

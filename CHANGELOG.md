@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.0 — pending release
+
+### Added
+- SOAP retrieve now surfaces NESTED complex properties as JSON-encoded
+  strings in the row: `AccountUser.Roles` (per-user role objects),
+  `AccountUser.UserPermissions`, `Role.Permissions` (full permission
+  catalog via `--filter ObjectID=<role ObjectID>`). The platform always
+  returned these subtrees — the flat parser silently dropped them, which
+  made roles/permissions look API-inaccessible when the SSJS WSProxy
+  pattern consumed them all along. Scalars parse exactly as before;
+  unwrapped single-child wrappers normalize to arrays so consumers always
+  iterate one shape. VERIFIED live: per-user roles + permissions on
+  AccountUser, 927-permission role catalog via Role.Permissions
+
 ## v1.3.1 — released
 
 ### Fixed

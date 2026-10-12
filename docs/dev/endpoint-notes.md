@@ -135,15 +135,18 @@ Property-set reality vs docs (probed by bisection 2026-09-16):
 
 | Subject | Verdict | Notes |
 |---|---|---|
-| AccountUser.Roles / .UserPermissions props | SILLENTLY EMPTY | props accepted, retrieve returns 200-OK rows with both empty; docs mark UserPermissions "Not used." — per-user roles do NOT ride on AccountUser retrieves |
+| AccountUser.Roles / .UserPermissions props | HYDRATE as nested JSON | props accepted; subtrees (Roles→Role objects, UserPermissions→UserAccess blocks) returned as JSON-encoded strings in the row (fixed 2026-10-12: the flat parser used to silently drop them — the data was on the wire all along; SSJS WSProxy always consumed it). UserPermissions doc text "Not used." is stale for retrieves |
 | PermissionSet | INVALID ObjectType | "PermissionSet is not a valid ObjectType." — it is a CHILD type on Role (PermissionSets array), not a top-level retrieve target |
 | AccountRole | INVALID ObjectType | "AccountRole is not a valid ObjectType." — no such object in the SOAP API (docs corpus has no page) |
 | Role | RETRIEVABLE (matrix is STALE) | official support matrix marks Role.Retrieve UNSUPPORTED, but the wire returns rows with props ObjectID/Name/CustomerKey/IsSystemDefined/IsPrivate (+PartnerKey auto); props ID and Value are REJECTED ("do not match with the fields of Role") — property validation fires before method support |
 | UserAccess | VALID but ADMIN-GATED | the permissions object (retrieve-only per matrix); non-admin principal → "The specified principal does not have permission to view the requested UserAccess data" (docs: "you must be an admin") |
 
-Working recipes: role catalog → `mcecli soap retrieve Role --props ObjectID,Name,CustomerKey,IsSystemDefined,IsPrivate`;
-per-user permission values → UserAccess (needs an admin-scoped installed package);
-user→role assignment is NOT exposed via SOAP retrieve on these objects.
+Working recipes (the SSJS WSProxy pattern, now native):
+- user catalog + per-user roles: `mcecli soap retrieve AccountUser --props ID,Name,UserID,Roles,UserPermissions`
+- role → FULL permission catalog: `mcecli soap retrieve Role --props ObjectID,Name,Permissions --filter ObjectID=<role ObjectID>`
+  (a system-defined role verified live: 927 Permission entries with ID/Name/Description/ObjectType/Operation/IsShareable)
+- per-user permission VALUES: UserAccess — needs an admin-scoped installed package;
+user→role assignment is IN the AccountUser.Roles array (no join object needed).
 - OpenEvent/NotSentEvent +: EventType
 - SentEvent returns SubscriberID inside PartnerProperties pairs → mcecli parse flattens them into the row
 
