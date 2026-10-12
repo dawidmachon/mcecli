@@ -84,7 +84,7 @@ var soapCatalog = []soapObject{
 	{
 		objectType: "AccountUser", alias: "users list", use: "platform users (who has access)",
 		props:  []prop{{"ID", "live"}, {"UserID", "live"}, {"Name", "live"}, {"Email", "live"}, {"ActiveFlag", "live"}, {"DefaultBusinessUnit", "live"}, {"Delete", "live"}},
-		quirks: []string{"Roles and UserPermissions hydrate as NESTED JSON in the row (the flat parser used to silently drop them — fixed 2026-10-12; the SSJS WSProxy pattern always saw them)", "role → permission catalog: soap retrieve Role --props ObjectID,Name,Permissions --filter ObjectID=<role ObjectID> (927-permission role verified live)", "UserAccess (per-user permission values) stays admin-gated"},
+		quirks: []string{"Roles and UserPermissions hydrate as NESTED JSON in the row (the flat parser used to silently drop them — fixed 2026-10-12; the SSJS WSProxy pattern always saw them)", "role → permission catalog: soap retrieve Role --props ObjectID,Name,Permissions --filter ObjectID=<role ObjectID> (927-permission role verified live)", "AssociatedBusinessUnits/SsoIdentities/TimeZone/Locale: REJECTED at request time — user→BU mapping comes from BusinessUnit responses (AccountUsers[] inverse)", "UserAccess (per-user permission values) stays admin-gated"},
 	},
 	{
 		objectType: "Role", alias: "user roles", use: "role catalog (system-defined + account-defined)",

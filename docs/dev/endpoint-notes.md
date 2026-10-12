@@ -147,6 +147,37 @@ Working recipes (the SSJS WSProxy pattern, now native):
   (a system-defined role verified live: 927 Permission entries with ID/Name/Description/ObjectType/Operation/IsShareable)
 - per-user permission VALUES: UserAccess — needs an admin-scoped installed package;
 user→role assignment is IN the AccountUser.Roles array (no join object needed).
+
+## Complex-property audit — post-parser-fix sweep (2026-10-12)
+
+Every docs-listed array/object property on mcecli's SOAP surface, classified live.
+The old flat parser dropped class-B silently — anything requesting those props got
+empty strings; all now surface as JSON. Classes:
+
+- **B — accepted + HYDRATED (the fix matters):** AccountUser.Roles,
+  AccountUser.UserPermissions, Role.Permissions, and — discovered in this sweep —
+  **BusinessUnit.AccountUsers, embedded UNPROMPTED in every BusinessUnit response**
+  (per user: AccountUserID/ObjectID/Roles) — the ONLY SOAP user↔BU mapping there is
+  (AccountUser.AssociatedBusinessUnits is request-rejected, so the inverse is all
+  you get). PartnerProperties on event objects (fixed separately 2026-09-16).
+- **A — request-REJECTED (never reached the parser; no historical loss):**
+  Subscriber.Attributes/Lists/GlobalUnsubscribeCategory; AccountUser.AssociatedBusinessUnits/
+  SsoIdentities/TimeZone/Locale/LanguageLocale/DefaultBusinessUnitObject;
+  DataExtension.Fields (+Sendable*/Template family); Send.Events/Links/List;
+  Account.Children/AccountUsers/BusinessRules; BusinessUnit.AccountUsers (as a request
+  prop); UnsubEvent.List; Role.ID/Value. Validation error: "The Request Property(s) …
+  do not match with the fields of <Object>".
+- **C — accepted but EMPTY on retrieve (server does not hydrate):**
+  Account.Roles, Account.Subscription, BusinessUnit.Roles, BusinessUnit.SubscriberFilter.
+- **D — object-TYPED but scalar on the wire (parsed fine as text all along):**
+  EventType (all events), Status (ListSubscriber/Subscriber), AccountType,
+  EmailTypePreference, ListClassification.
+
+Docs-vs-wire drift pattern: the object pages list aspirational composition graphs;
+the retrieve field set is much smaller (request-time validation) and hydration is
+sparser still (class C). When a complex prop returns empty, check WHICH class it is
+before concluding anything about the platform: A = wrong prop for SOAP, C = right prop,
+server won't hydrate, B = should have data (if empty → grant/scope).
 - OpenEvent/NotSentEvent +: EventType
 - SentEvent returns SubscriberID inside PartnerProperties pairs → mcecli parse flattens them into the row
 

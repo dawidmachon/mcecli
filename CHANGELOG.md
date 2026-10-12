@@ -13,6 +13,12 @@
   unwrapped single-child wrappers normalize to arrays so consumers always
   iterate one shape. VERIFIED live: per-user roles + permissions on
   AccountUser, 927-permission role catalog via Role.Permissions
+- full complex-property audit across the SOAP surface (endpoint-notes):
+  most docs-listed arrays are request-REJECTED ("do not match with the
+  fields of …") — no historical loss there; sweep discovery —
+  BusinessUnit responses embed AccountUsers[] UNPROMPTED (per user:
+  AccountUserID/ObjectID/Roles): the only SOAP user↔BU mapping there is,
+  now surfaced as JSON
 
 ## v1.3.1 — released
 
