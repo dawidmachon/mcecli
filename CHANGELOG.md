@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.4.1 — released
+
+### Fixed
+- `describe` hints rendered the entry alias as if it were a CLI command —
+  the `Role`/`UserAccess` aliases ("user roles" / "user permissions") sent
+  agents to `mcecli user roles`: unknown command + usage text on stderr,
+  which also broke merged-stream JSON parses. Hints now ALWAYS name a
+  runnable command: objects without a curated read carry an explicit
+  `mcecli soap retrieve …` line (`Role`, `UserAccess`, `ListSubscriber`),
+  and every hint is prefixed with `mcecli ` — copy-paste runnable.
+  Regression test locks the property
+
 ## v1.4.0 — released
 
 ### Added
