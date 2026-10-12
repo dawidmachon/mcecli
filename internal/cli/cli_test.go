@@ -1005,3 +1005,30 @@ func TestUndoSnapshotOnDelete(t *testing.T) {
 		t.Fatalf("snapshot for gone-1 not listed: %v", e)
 	}
 }
+
+// TestDescribeHintIsARunnableCommand: describe hints render the alias as the
+// way to read rows — Role/UserAccess aliases ("user roles") are NOT commands,
+// and an agent following the hint verbatim hit `mcecli user roles`
+// (unknown command + usage text) instead of the soap retrieve line.
+func TestDescribeHintIsARunnableCommand(t *testing.T) {
+	fakeSFMC(t, nil)
+	code, out, _ := run(t, "describe", "Role")
+	if code != exitOK {
+		t.Fatalf("describe Role exit=%d out=%s", code, out)
+	}
+	h, _ := envelope(t, out)["hint"].(string)
+	if !strings.HasPrefix(h, "read rows with: mcecli soap retrieve Role --props") {
+		t.Fatalf("Role hint must name the runnable soap retrieve command: %q", h)
+	}
+	if strings.Contains(h, "user roles") {
+		t.Fatalf("hint must not render the alias as a command: %q", h)
+	}
+
+	code, out, _ = run(t, "describe", "Subscriber")
+	if code != exitOK {
+		t.Fatalf("describe Subscriber exit=%d out=%s", code, out)
+	}
+	if h, _ := envelope(t, out)["hint"].(string); !strings.HasPrefix(h, "read rows with: mcecli sub") {
+		t.Fatalf("curated alias must render as the runnable command: %q", h)
+	}
+}

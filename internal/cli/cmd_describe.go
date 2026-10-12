@@ -24,6 +24,7 @@ import (
 type soapObject struct {
 	objectType string
 	alias      string // dv/sub alias ("" = none)
+	read       string // how to READ rows when the alias is not itself a command ("" = alias is the command)
 	dataView   string // SQL data view name (_Sent etc.), "" = none
 	use        string // what it's for, agent-facing
 	props      []prop
@@ -74,7 +75,7 @@ var soapCatalog = []soapObject{
 		quirks: []string{"Status returns the NAME (\"Active\"), not the enum number", "ModifiedDate is in docs but NOT retrievable here", "same email may exist on multiple MID contexts → mcecli sub surfaces all matches"},
 	},
 	{
-		objectType: "ListSubscriber", alias: "sub (join)", use: "per-list membership status",
+		objectType: "ListSubscriber", alias: "sub (join)", read: "soap retrieve ListSubscriber --props ListID,SubscriberKey,Status", use: "per-list membership status",
 		props: []prop{{"ListID", "live"}, {"SubscriberKey", "live"}, {"Status", "live"}, {"CreatedDate", "live"}},
 	},
 	{
@@ -87,12 +88,12 @@ var soapCatalog = []soapObject{
 		quirks: []string{"Roles and UserPermissions hydrate as NESTED JSON in the row (the flat parser used to silently drop them — fixed 2026-10-12; the SSJS WSProxy pattern always saw them)", "role → permission catalog: soap retrieve Role --props ObjectID,Name,Permissions --filter ObjectID=<role ObjectID> (927-permission role verified live)", "AssociatedBusinessUnits/SsoIdentities/TimeZone/Locale: REJECTED at request time — user→BU mapping comes from BusinessUnit responses (AccountUsers[] inverse)", "UserAccess (per-user permission values) stays admin-gated"},
 	},
 	{
-		objectType: "Role", alias: "user roles", use: "role catalog (system-defined + account-defined)",
+		objectType: "Role", alias: "user roles", read: "soap retrieve Role --props ObjectID,Name,CustomerKey,IsSystemDefined,IsPrivate", use: "role catalog (system-defined + account-defined)",
 		props:  []prop{{"ObjectID", "live"}, {"Name", "live"}, {"CustomerKey", "live"}, {"IsSystemDefined", "live"}, {"IsPrivate", "live"}},
 		quirks: []string{"RETRIEVABLE live despite the official support matrix marking Role.Retrieve unsupported (stale matrix cell) — props ObjectID/Name/CustomerKey/IsSystemDefined/IsPrivate verified; ID and Value are REJECTED (\"do not match with the fields of Role\")", "Permissions prop + ObjectID filter returns the FULL nested permission catalog as JSON (927-entry role verified live)", "Create/Update/Delete per matrix need role-management rights"},
 	},
 	{
-		objectType: "UserAccess", alias: "user permissions", use: "permission values per user (docs: retrieve requires an ADMIN principal)",
+		objectType: "UserAccess", alias: "user permissions", read: "soap retrieve UserAccess --props Name,Value,CustomerKey (admin principal required)", use: "permission values per user (docs: retrieve requires an ADMIN principal)",
 		props:  []prop{{"Name", "docs"}, {"Value", "docs"}, {"CustomerKey", "docs"}},
 		quirks: []string{"valid ObjectType (NOT invalid like PermissionSet/AccountRole) but gated: non-admin principal → \"The specified principal does not have permission to view the requested UserAccess data\""},
 	},
@@ -180,7 +181,11 @@ func cmdDescribe(args []string, stdout, stderr io.Writer) int {
 		data["quirks"] = found.quirks
 	}
 	e := output.OK(0, data)
-	e.Hint = "read rows with: " + found.alias + " (--fields to project)"
+	read := found.alias
+	if found.read != "" {
+		read = found.read
+	}
+	e.Hint = "read rows with: mcecli " + read + " (--fields to project)"
 	_ = output.Print(e, false, stdout)
 	return exitOK
 }
