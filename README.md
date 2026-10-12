@@ -73,7 +73,7 @@ That's it — reads work immediately. Writes require explicit gates (below).
 | Automations | `auto list/health/<id>`, `--expand-queries`, `--deps` | 30-day success/error rates; SQL audit; DE lineage |
 | Queries (SQL on platform) | `query list/validate/create/get/update/run/status` | full lifecycle: validate server-side, create, run + poll; see [docs/sql-reference.md](docs/sql-reference.md) |
 | Send definitions | `esd list/get`, `guc list` | user-initiated sends, global unsubscribe categories |
-| Journeys | `md pull journeys`, `rest` | metadata + lifecycle reads |
+| Journeys | `journey list/get/versions/stats`, `md pull journeys`, `rest` | curated reads; `journey get` = FULL definition incl. activity canvas (collection/pull items are summaries) |
 | Assets | `asset search/pull` | binary download, CDN URLs |
 | Webhooks | `ens callbacks/subs` | which events stream where |
 | Users & folders | `users list`, `folders --type T` | platform users; folder ids for create commands |

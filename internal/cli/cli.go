@@ -49,8 +49,9 @@ Commands:
                     (30-day success/error counts — "what is failing?")
   ts list|get       triggered send definitions (Canceled/Inactive = sends
                     silently not going out)
-  journey list|versions  journey reads (REST): curated list + FULL version
-                    history per key (read-only; lifecycle writes stay gated
+  journey list|get|versions  journey reads (REST): curated list + FULL
+                    definition per key (activity canvas) + FULL version
+                    history (read-only; lifecycle writes stay gated
                     behind rest)
   lists [members <id>]  subscriber lists + who-is-on-list (read-only)
   guc list          global unsubscribe categories (enterprise)

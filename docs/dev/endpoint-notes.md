@@ -244,6 +244,26 @@ narrows to one version; an unknown version returns an empty array).
 Older versions are immutable history with their own status (Stopped/…).
 Curated: `mcecli journey list` + `mcecli journey versions <key>`.
 
+Journey DETAIL read (canvas) — VERIFIED live (round 8):
+- COLLECTION vs DETAIL: /interactions list items (journey list, md pull
+  journeys) are SUMMARIES BY PLATFORM DESIGN — no activities[] array.
+  The activity canvas (activities[].configurationArguments / metaData /
+  outcomes / schema) exists ONLY on the per-journey detail read:
+  GET /interaction/v1/interactions/key:{key} or /{definitionId}.
+- The detail read returns ~25 top-level properties (triggers/goals/exits/
+  defaults/campaigns/notifiers/metaData/…). Drafts return the canvas too
+  (not a published-only read).
+- extras param: activities / all / none ALL accepted; payload shape was
+  IDENTICAL across all three on every probed journey (canvas included
+  regardless; performance/stats fields never appeared — possibly require
+  journeys with send history).
+- ?versionNumber=N on the detail read IS honored: returns that immutable
+  historical version with its own canvas (verified v1 vs v4 shapes).
+- Unknown key on the key:{key} form → 404 "Interaction matching key not
+  found."
+- Curated: `mcecli journey get <key> [--version N] [--extras activities|all|none]`
+  (key → id two-step only for --version N; latest needs ONE call).
+
 Journey PERFORMANCE (VERIFIED live, round 6): the status endpoint's `id`
 is STABLE across versions (journey id, not per-version). Two summaries:
 - GET /interaction/v1/interactions/{id}/summary → {id, activities:
@@ -263,7 +283,7 @@ summaries in one envelope).
 |---|---|---|
 | GET /interaction/v1/interactions | VERIFIED | journeys; /interactions (NOT /journeys); {count,page,items}; newest version only; $pageSize NOT honored (server pages at 50); $filter/name filtering NOT honored — filter client-side |
 | GET /interaction/v1/interactions/status/key:{key} | VERIFIED | version history with ?AllVersions=true or ?VersionNumber=N (see notes above) |
-| GET /interaction/v1/interactions/{id} | UNVERIFIED | single journey detail ({id} = definitionId) |
+| GET /interaction/v1/interactions/{id} | VERIFIED | single journey detail by definitionId — FULL canvas (see detail-read block below); latest version by default; ?versionNumber=N narrows to an immutable historical version |
 | POST /interaction/v1/interactions/stop/{id} | UNVERIFIED | stops running journey; --confirm gated |
 | POST /interaction/v1/interactions/pause/{id} | UNVERIFIED | pauses journey; --confirm gated |
 | POST /interaction/v1/interactions/resume/{id} | UNVERIFIED | resumes journey; --confirm gated |

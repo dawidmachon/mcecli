@@ -247,3 +247,195 @@ func TestJourneyListSizeTransparencyAfterSearch(t *testing.T) {
 		t.Fatalf("search fact must survive: %q", h)
 	}
 }
+
+// journey get: the FULL definition (activity canvas) per key. Platform
+// facts locked here: the collection endpoints (journey list, md pull
+// journeys) return summaries WITHOUT activities[] by platform design; the
+// key:{key} prefix form of the detail read resolves without a prior
+// lookup; historical versions resolve via the status endpoint (stable id)
+// then versionNumber=N.
+
+const journeyGetDetailBody = `{"id":"def-id-9","definitionId":"def-id-9","key":"jk-1","name":"Welcome Journey","version":4,"status":"Published","channel":"email","activities":[{"id":"act-1","type":"EMAILV2","name":"Email 1","configurationArguments":{"applicationExtensionKey":"app-key"},"metaData":{"category":"email"}}]}`
+
+func journeyGetRoutes(captured *[]string, detailBody string, detailStatus int) func(*http.ServeMux) {
+	return func(mux *http.ServeMux) {
+		mux.HandleFunc("/interaction/v1/interactions/status/key:jk-1", func(w http.ResponseWriter, r *http.Request) {
+			*captured = append(*captured, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+			_, _ = w.Write([]byte(journeyVersionsBody))
+		})
+		mux.HandleFunc("/interaction/v1/interactions/def-id-9", func(w http.ResponseWriter, r *http.Request) {
+			*captured = append(*captured, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+			if detailStatus != 0 {
+				w.WriteHeader(detailStatus)
+			}
+			_, _ = w.Write([]byte(detailBody))
+		})
+		mux.HandleFunc("/interaction/v1/interactions/key:jk-1", func(w http.ResponseWriter, r *http.Request) {
+			*captured = append(*captured, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+			if detailStatus != 0 {
+				w.WriteHeader(detailStatus)
+			}
+			_, _ = w.Write([]byte(detailBody))
+		})
+	}
+}
+
+func TestJourneyGetLatestOneCall(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, journeyGetDetailBody, 0))
+	code, out, _ := run(t, "journey", "get", "jk-1")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	// wire: ONE call, key:{key} prefix form, extras=activities default
+	if len(captured) != 1 || captured[0] != "GET /interaction/v1/interactions/key:jk-1?extras=activities" {
+		t.Fatalf("unexpected wire: %v", captured)
+	}
+	e := envelope(t, out)
+	def, _ := e["data"].(map[string]any)
+	if def["key"] != "jk-1" || e["count"].(float64) != 1 {
+		t.Fatalf("definition envelope wrong: %v", e)
+	}
+	acts, _ := def["activities"].([]any)
+	if len(acts) != 1 {
+		t.Fatalf("activity canvas must survive: %v", def["activities"])
+	}
+	act := acts[0].(map[string]any)
+	if _, ok := act["configurationArguments"]; !ok {
+		t.Fatalf("configurationArguments must survive: %v", act)
+	}
+	if h, _ := e["hint"].(string); !strings.Contains(h, "summaries") || !strings.Contains(h, "journey versions") {
+		t.Fatalf("hint must point summaries-readers to the canvas + history: %q", h)
+	}
+}
+
+func TestJourneyGetExtrasVariants(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, journeyGetDetailBody, 0))
+	code, _, _ := run(t, "journey", "get", "jk-1", "--extras", "all")
+	if code != exitOK {
+		t.Fatalf("exit=%d", code)
+	}
+	code, _, _ = run(t, "journey", "get", "jk-1", "--extras", "none")
+	if code != exitOK {
+		t.Fatalf("exit=%d", code)
+	}
+	// wire: extras=all passes through; extras=none omits the parameter
+	if len(captured) != 2 || captured[0] != "GET /interaction/v1/interactions/key:jk-1?extras=all" ||
+		captured[1] != "GET /interaction/v1/interactions/key:jk-1?" {
+		t.Fatalf("unexpected wire: %v", captured)
+	}
+	code, _, _ = run(t, "journey", "get", "jk-1", "--extras", "bogus")
+	if code != exitUsage {
+		t.Fatalf("unknown --extras must be usage, got %d", code)
+	}
+}
+
+func TestJourneyGetCanvasLessIsHinted(t *testing.T) {
+	// a definition WITHOUT activities[] + default extras must SAY so (draft
+	// with no activities vs platform trim — never pass silently)
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, `{"id":"def-id-9","key":"jk-1","version":4,"status":"Draft"}`, 0))
+	code, out, _ := run(t, "journey", "get", "jk-1")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	if h, _ := envelope(t, out)["hint"].(string); !strings.Contains(h, "no activities[]") {
+		t.Fatalf("canvas-less response must be hinted: %q", h)
+	}
+}
+
+func TestJourneyGetHistoricalVersionTwoStep(t *testing.T) {
+	var captured []string
+	old := strings.Replace(journeyGetDetailBody, `"version":4,"status":"Published"`, `"version":2,"status":"Stopped"`, 1)
+	fakeSFMC(t, journeyGetRoutes(&captured, old, 0))
+	code, out, _ := run(t, "journey", "get", "jk-1", "--version", "2")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	// wire: status resolves key→id first, then detail with versionNumber=N
+	if len(captured) != 2 ||
+		captured[0] != "GET /interaction/v1/interactions/status/key:jk-1?AllVersions=true" ||
+		captured[1] != "GET /interaction/v1/interactions/def-id-9?extras=activities&versionNumber=2" {
+		t.Fatalf("unexpected wire: %v", captured)
+	}
+	def := envelope(t, out)["data"].(map[string]any)
+	if def["version"] != float64(2) || def["status"] != "Stopped" {
+		t.Fatalf("historical version must be returned: %v", def)
+	}
+}
+
+func TestJourneyGetUnknownVersionFailsEarly(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, journeyGetDetailBody, 0))
+	code, out, _ := run(t, "journey", "get", "jk-1", "--version", "9")
+	if code != exitAPI {
+		t.Fatalf("unknown version must be API failure, got %d out=%s", code, out)
+	}
+	// wire: the doomed detail call must NOT happen — status validation only
+	if len(captured) != 1 {
+		t.Fatalf("must fail before the detail call: %v", captured)
+	}
+	e := envelope(t, out)
+	if msg, _ := e["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "no version 9") {
+		t.Fatalf("error must name the missing version: %v", e["error"])
+	}
+	if h, _ := e["hint"].(string); !strings.Contains(h, "1 2 3 4") {
+		t.Fatalf("hint must list the versions that exist: %q", h)
+	}
+}
+
+func TestJourneyGetUnknownKey(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, journeyStatusRoute(&captured, `[]`))
+	code, out, _ := run(t, "journey", "get", "jk-1", "--version", "1")
+	if code != exitAPI {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	if h, _ := envelope(t, out)["hint"].(string); !strings.Contains(h, "typo") {
+		t.Fatalf("unknown key must be hinted: %q", h)
+	}
+}
+
+func TestJourneyGetFieldsProjection(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, journeyGetDetailBody, 0))
+	code, out, _ := run(t, "journey", "get", "jk-1", "--fields", "key,status,version")
+	if code != exitOK {
+		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	def := envelope(t, out)["data"].(map[string]any)
+	if len(def) != 3 || def["key"] != "jk-1" || def["status"] != "Published" || def["version"] != float64(4) {
+		t.Fatalf("--fields must project the definition: %v", def)
+	}
+	if h, _ := envelope(t, out)["hint"].(string); !strings.Contains(h, "projected by --fields") {
+		t.Fatalf("projection must be declared in the hint: %q", h)
+	}
+}
+
+func TestJourneyGetUsageGuards(t *testing.T) {
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, journeyGetDetailBody, 0))
+	code, _, _ := run(t, "journey", "get")
+	if code != exitUsage {
+		t.Fatalf("missing key must be usage, got %d", code)
+	}
+	code, _, _ = run(t, "journey", "get", "jk-1", "--version", "-1")
+	if code != exitUsage {
+		t.Fatalf("negative --version must be usage, got %d", code)
+	}
+}
+
+func TestJourneyGetDetailErrorPassthrough(t *testing.T) {
+	// platform errors on the detail call flow through with the real message
+	var captured []string
+	fakeSFMC(t, journeyGetRoutes(&captured, `{"message":"Interaction not found."}`, http.StatusNotFound))
+	code, out, _ := run(t, "journey", "get", "jk-1")
+	if code != exitAPI {
+		t.Fatalf("expected API exit 1, got %d out=%s", code, out)
+	}
+	e := envelope(t, out)
+	if msg, _ := e["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "not found") {
+		t.Fatalf("platform error message must pass through: %v", e["error"])
+	}
+}
