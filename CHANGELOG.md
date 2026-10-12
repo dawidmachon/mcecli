@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.3.1 — pending release
+## v1.3.1 — released
 
 ### Fixed
 - `bu discover` returned only the calling context instead of the full
