@@ -360,7 +360,7 @@ func Resolve(cfg *Config, st State, profileFlag, buFlag string) (*Resolved, erro
 	// class of incident. The check uses the canonical profile name from config,
 	// so it fires even when the caller passes a case-variant or substring flag.
 	if IsProdName(name) && EnvGet(EnvNoProd) != "" {
-		return nil, fmt.Errorf("PROD profile %q refused: set MCECLI_NO_PROD=1 to allow", name)
+		return nil, fmt.Errorf("PROD profile %q refused: MCECLI_NO_PROD=1 is set (unset it to allow PROD profiles)", name)
 	}
 	WarnProdOnce(name)
 

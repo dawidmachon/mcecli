@@ -196,6 +196,29 @@ func TestCaseInsensitiveLookups(t *testing.T) {
 	}
 }
 
+// TestProdGuardRefusalMessageDirection: the PROD hard-guard fires WHEN
+// MCECLI_NO_PROD is set — so its message must say UNSET, not set (a
+// backwards message once shipped: it told the operator to do the thing
+// that caused the refusal).
+func TestProdGuardRefusalMessageDirection(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MCECLI_HOME", dir)
+	if err := Save(&Config{Profiles: map[string]*Profile{
+		"myprod": {Subdomain: "s", ClientID: "i", ClientSecret: "x"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MCECLI_NO_PROD", "1")
+	_, err := Resolve(mustLoad(t), State{}, "myprod", "")
+	if err == nil {
+		t.Fatal("PROD-named profile must be refused while MCECLI_NO_PROD=1")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "unset") || strings.Contains(msg, "set MCECLI_NO_PROD=1 to allow") {
+		t.Fatalf("refusal message must point the RIGHT way (unset, not set): %s", msg)
+	}
+}
+
 // TestSessionSanitization: a hostile MCECLI_SESSION must not traverse out of
 // the mcecli home directory (multi-agent hardening 2026-09-17).
 func TestSessionSanitization(t *testing.T) {

@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.3.1 — released
+
+### Fixed
+- `bu discover` returned only the calling context instead of the full
+  estate: `RetrieveBusinessUnits`' QueryAllAccounts default was CLOBBERED
+  when the caller passed opts (`Opts{Refresher}`) — second ship of the
+  silent-param-drop bug class; the no-opts wire test never exercised the
+  production call shape. QAA is now a non-overridable contract, wire-tested
+  WITH caller opts. VERIFIED live post-fix: full hierarchies restored on
+  every granted package (same credentials that read 1 row pre-fix); the
+  deliberately-limited package still yields 0 rows (genuine grant
+  boundary). Also verified equivalent live: account_id-at-mint vs omitted,
+  ClientIDs and Client-header shapes — no extra elements needed
+- PROD-guard refusal message pointed the wrong way (said "set" where it
+  must say "unset"); direction-asserted by test
+
 ## v1.3.0 — released
 
 ### Added
