@@ -71,6 +71,21 @@ domain_verification      —                         Domain Verification
 | Response shape | VERIFIED | `<Results xsi:type="Account">` with UNPREFIXED children (default partnerAPI ns); `<OverallStatus>` sibling of Results |
 | Paging | UNVERIFIED | ContinueRequest not yet needed/implemented |
 
+QAA catalog = the API USER's grant mirror — VERIFIED (multi-auth matrix):
+- BusinessUnit + QueryAllAccounts enumerates exactly the accounts the
+  installed package's service user can access; contacts/v1/schema →
+  availableBusinessUnits mirrors it 1:1. A SUCCESSFUL enterprise-MID token
+  mint is NOT evidence of estate visibility (mint ≠ grant).
+- Observed outcome classes: enterprise-root-bound package → 1 row (the
+  root itself, "no additional rows"); child-BU-bound package → 0 rows even
+  from the enterprise token (not even a calling context); child-context
+  token → only that child. The FULL hierarchy requires estate-wide API-user
+  BU association (the historical VERIFIED-full case) — or fresh-package
+  grants still propagating.
+- Rule of thumb: availableBusinessUnits count == the row count QAA can
+  ever return for that credential. Check it FIRST when discovery
+  "unexpectedly" returns one row — the flag is fine, the grant is narrow.
+
 ## SOAP DE row retrieve — ROOT-CAUSED + FIXED (2026-09-27, round-8)
 
 `RetrieveRequest` with `ObjectType=DataExtensionObject[KEY]`, SimpleFilterPart
