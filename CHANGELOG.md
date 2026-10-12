@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.4.0 — pending release
+## v1.4.0 — released
 
 ### Added
 - SOAP retrieve now surfaces NESTED complex properties as JSON-encoded
