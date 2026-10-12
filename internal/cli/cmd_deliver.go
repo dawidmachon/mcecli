@@ -137,10 +137,17 @@ func deDump(args []string, stdout, stderr io.Writer) int {
 		_ = output.Print(output.Fail(0, err.Error(), ""), c.pretty, stdout)
 		return exitCfg
 	}
-	f, err := os.Create(target)
+	// write to a temp file and rename: two agents dumping the same DE must
+	// never truncate each other's file (round-8 concurrency hardening)
+	tmpTarget := target + ".tmp-" + strconv.Itoa(os.Getpid())
+	f, err := os.Create(tmpTarget)
 	if err != nil {
 		_ = output.Print(output.Fail(0, err.Error(), ""), c.pretty, stdout)
 		return exitCfg
+	}
+	keepPartial := func() {
+		f.Close()
+		_ = os.Rename(tmpTarget, target) // partial data is still useful
 	}
 
 	rows := 0
@@ -179,13 +186,18 @@ func deDump(args []string, stdout, stderr io.Writer) int {
 		}
 		status, pageResp, env2, code = s.call(http.MethodGet, next, nil, nil)
 		if env2 != nil || status >= 400 {
-			f.Close()
+			keepPartial()
 			e := output.Fail(status, "dump interrupted after "+strconv.Itoa(rows)+" rows", "partial file kept: "+target)
 			_ = output.Print(e, c.pretty, stdout)
 			return exitAPI
 		}
 	}
 	f.Close()
+	// atomic publish: readers see either the previous dump or the full new one
+	if err := os.Rename(tmpTarget, target); err != nil {
+		_ = output.Print(output.Fail(0, err.Error(), ""), c.pretty, stdout)
+		return exitCfg
+	}
 
 	meta := map[string]any{
 		"fetchedAt": time.Now().Unix(), "rows": rows, "total": total,
@@ -249,7 +261,7 @@ func readMeta(path string) map[string]any {
 
 func writeMeta(path string, meta map[string]any) {
 	if b, err := json.Marshal(meta); err == nil {
-		_ = os.WriteFile(path, b, 0o600)
+		_ = config.WriteFileAtomic(path, b, 0o600)
 	}
 }
 
@@ -333,7 +345,7 @@ func assetSearch(args []string, stdout, stderr io.Writer) int {
 		_ = output.Print(output.Fail(0, err.Error(), ""), c.pretty, stdout)
 		return exitCfg
 	}
-	_ = os.WriteFile(indexPath, resp, 0o600)
+	_ = config.WriteFileAtomic(indexPath, resp, 0o600)
 
 	var downloaded int
 	if pull {
@@ -424,7 +436,7 @@ func assetPullInternal(s *session, outDir, id string, counter *int) error {
 	if status >= 400 {
 		return fmt.Errorf("HTTP %d fetching asset %s", status, id)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "meta.json"), resp, 0o600); err != nil {
+	if err := config.WriteFileAtomic(filepath.Join(dir, "meta.json"), resp, 0o600); err != nil {
 		return err
 	}
 
@@ -439,7 +451,7 @@ func assetPullInternal(s *session, outDir, id string, counter *int) error {
 	// and try to fetch it as binary directly. Agents can use it without any
 	// SFMC API call. Falls back silently to url.txt if fetch fails.
 	if pu, ok := m["publishedURL"].(string); ok && pu != "" {
-		_ = os.WriteFile(filepath.Join(dir, "url.txt"), []byte(pu), 0o600)
+		_ = config.WriteFileAtomic(filepath.Join(dir, "url.txt"), []byte(pu), 0o600)
 		if purl, perr := url.Parse(pu); perr == nil && purl.Scheme != "" {
 			if fresp, gerr := http.DefaultClient.Get(pu); gerr == nil && fresp.StatusCode < 400 {
 				defer fresp.Body.Close()
@@ -450,7 +462,7 @@ func assetPullInternal(s *session, outDir, id string, counter *int) error {
 							fe = strings.TrimPrefix(strings.ToLower(x), ".")
 						}
 					}
-					if werr := os.WriteFile(filepath.Join(dir, "file."+fe), body, 0o600); werr == nil {
+					if werr := config.WriteFileAtomic(filepath.Join(dir, "file."+fe), body, 0o600); werr == nil {
 						*counter++
 						return nil
 					}
@@ -463,7 +475,7 @@ func assetPullInternal(s *session, outDir, id string, counter *int) error {
 	}
 	// Priority 2: inline content (htmlblock, textblock, webpage bodies)
 	if content, ok := m["content"].(string); ok && content != "" {
-		if err := os.WriteFile(filepath.Join(dir, "body."+ext), []byte(content), 0o600); err != nil {
+		if err := config.WriteFileAtomic(filepath.Join(dir, "body."+ext), []byte(content), 0o600); err != nil {
 			return err
 		}
 		*counter++
@@ -488,7 +500,7 @@ func assetPullInternal(s *session, outDir, id string, counter *int) error {
 				}
 			}
 		}
-		if err := os.WriteFile(filepath.Join(dir, "file."+fe), data, 0o600); err != nil {
+		if err := config.WriteFileAtomic(filepath.Join(dir, "file."+fe), data, 0o600); err != nil {
 			return err
 		}
 		*counter++

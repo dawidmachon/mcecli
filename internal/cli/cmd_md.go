@@ -29,10 +29,12 @@ type mdTypeDef struct {
 	SearchRequired bool   // endpoint requires $search (customObjects)
 	SearchParam    string // "$search"
 	PageSize       int
+	DeepRead       string // platform gap note: collection summaries vs per-item detail
 }
 
 var mdTypes = map[string]mdTypeDef{
-	"journeys":    {List: "interaction/v1/interactions", PageSize: 100},
+	"journeys": {List: "interaction/v1/interactions", PageSize: 100,
+		DeepRead: "collection items are journey SUMMARIES (no activity canvas — platform design, not truncation): full definition per journey via mcecli journey get <key> (raw: mcecli rest GET interaction/v1/interactions/key:{key}?extras=activities)"},
 	"automations": {List: "automation/v1/automations", PageSize: 100},
 	"queries":     {List: "automation/v1/queries", PageSize: 100},
 	"imports":     {List: "automation/v1/imports", PageSize: 100},
@@ -219,6 +221,9 @@ func mdPull(typeName string, tdef mdTypeDef, args []string, stdout, stderr io.Wr
 		"items": indexSample(index),
 	})
 	e.Hint = "grep/jq the files locally; index.json lists everything — --refresh re-pulls"
+	if tdef.DeepRead != "" {
+		e.Hint += " — NOTE: " + tdef.DeepRead
+	}
 	_ = output.Print(e, c.pretty, stdout)
 	return exitOK
 }

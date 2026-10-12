@@ -46,6 +46,13 @@ const usageJourney = `mcecli journey — journey reads (REST interaction/v1, REA
   mcecli journey versions <key>    — FULL version history of one journey
                [--version N]     — only version N
                (one call; lifecycle writes stay behind: mcecli rest … --write)
+  mcecli journey get <key>         — FULL journey definition: the activity
+               [--extras E]        canvas (activities[].configurationArguments
+               [--version N]       / metaData) that collection summaries
+               [--fields a,b,c]    (journey list, md pull journeys) lack.
+                                   extras: activities (default) | all | none
+                                   --version N fetches an immutable older
+                                   version; --fields projects the definition
   mcecli journey stats <key>       — population + activity summary across
                ALL versions (read-only; answers "is it working / how many
                contacts are in it?")
@@ -63,6 +70,8 @@ func cmdJourney(args []string, stdout, stderr io.Writer) int {
 		return journeyList(args[1:], stdout, stderr)
 	case "versions":
 		return journeyVersions(args[1:], stdout, stderr)
+	case "get":
+		return journeyGet(args[1:], stdout, stderr)
 	case "stats":
 		return journeyStats(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -275,6 +284,171 @@ func keyRowID(row map[string]any) string {
 	}
 	b, _ := json.Marshal(row["definitionId"])
 	return string(b)
+}
+
+// journeyGet — the FULL journey definition for one key, including the
+// activity canvas (activities[].configurationArguments / metaData).
+// VERIFIED live (round 8):
+//   - GET /interaction/v1/interactions/key:{key}?extras=activities — ONE
+//     call; the key:{key} prefix form resolves the journey without a prior
+//     lookup. Collection items (journey list, md pull journeys) are
+//     summaries BY PLATFORM DESIGN — the activity canvas exists only on
+//     this per-journey detail read.
+//   - extras=activities → canvas; extras=all accepted but the payload
+//     shape was IDENTICAL to activities on every probed journey (performance
+//     fields never appeared — may require send history); extras=none omits
+//     the parameter (platform default shape — canvas included regardless).
+//   - Historical versions: the journey id is STABLE across versions (round
+//     6), so --version N resolves key → id via the status endpoint, then
+//     GETs /interaction/v1/interactions/{id}?versionNumber=N. Older
+//     versions are immutable history; a versionNumber the server ignores
+//     is surfaced as a hint, never passed silently (no-ignored-flags rule).
+// Read-only GET — no write gate.
+func journeyGet(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("journey get", flag.ContinueOnError)
+	var c common
+	var version int
+	var extras string
+	addCommon(fs, &c)
+	addProjection(fs, &c)
+	fs.IntVar(&version, "version", 0, "historical version N (default: latest published version)")
+	fs.StringVar(&extras, "extras", "activities", `detail extras: "activities" (canvas, default) | "all" | "none" = omit the parameter`)
+	help := addHelp(fs)
+	if err := parseCmd(fs, args); err != nil {
+		return exitUsage
+	}
+	if *help {
+		fmt.Fprint(stdout, usageJourney)
+		return exitOK
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprint(stderr, "usage: mcecli journey get <key> [--version N] [--extras activities|all|none]\n")
+		return exitUsage
+	}
+	if version < 0 {
+		e := output.Fail(0, "--version must be >= 0", "0 = latest (the default)")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	switch extras {
+	case "activities", "all", "none":
+	default:
+		e := output.Fail(0, fmt.Sprintf("unknown --extras value %q", extras),
+			"activities (default) | all | none")
+		_ = output.Print(e, c.pretty, stdout)
+		return exitUsage
+	}
+	key := fs.Arg(0)
+
+	s, env, code := newSession(&c)
+	if env != nil {
+		_ = output.Print(env, c.pretty, stdout)
+		return code
+	}
+
+	definitionID := ""
+	found := false
+	var existingVersions []any
+	if version > 0 {
+		// resolve key → id (stable across versions) + validate N against the
+		// version list BEFORE a doomed detail call
+		u := url.URL{Path: "interaction/v1/interactions/status/key:" + url.PathEscape(key)}
+		q := url.Values{}
+		q.Set("AllVersions", "true")
+		u.RawQuery = q.Encode()
+		st, resp, env2, _ := s.call(http.MethodGet, u.String(), nil, nil)
+		if env2 != nil {
+			_ = output.Print(env2, c.pretty, stdout)
+			return exitAPI
+		}
+		if st >= 400 {
+			_ = output.Print(errorEnvelope(st, resp, http.MethodGet), c.pretty, stdout)
+			return exitAPI
+		}
+		raw, ok := parseJSON(resp).([]any)
+		if !ok || len(raw) == 0 {
+			e := output.Fail(st, "no versions for key "+key,
+				"typo, or the journey lives in another BU (mcecli status) — mcecli journey list")
+			_ = output.Print(e, c.pretty, stdout)
+			return exitAPI
+		}
+		for _, it := range raw {
+			m, ok := it.(map[string]any)
+			if !ok {
+				continue
+			}
+			existingVersions = append(existingVersions, m["versionNumber"])
+			if v, ok := m["versionNumber"].(float64); ok && int(v) == version {
+				definitionID, _ = m["id"].(string)
+				found = true
+			}
+		}
+		sort.Slice(existingVersions, func(i, j int) bool {
+			a, _ := existingVersions[i].(float64)
+			b, _ := existingVersions[j].(float64)
+			return a < b
+		})
+		if !found || definitionID == "" {
+			e := output.Fail(st, fmt.Sprintf("no version %d for key %s", version, key),
+				fmt.Sprintf("versions that exist: %v — mcecli journey versions %s", existingVersions, key))
+			_ = output.Print(e, c.pretty, stdout)
+			return exitAPI
+		}
+	}
+
+	// detail read: key:{key} prefix form needs no prior lookup (latest);
+	// {definitionId} + versionNumber=N narrows to an immutable older version
+	path := "interaction/v1/interactions/key:" + url.PathEscape(key)
+	if version > 0 {
+		path = "interaction/v1/interactions/" + url.PathEscape(definitionID)
+	}
+	u := url.URL{Path: path}
+	q := url.Values{}
+	if extras != "none" {
+		q.Set("extras", extras)
+	}
+	if version > 0 {
+		q.Set("versionNumber", strconv.Itoa(version))
+	}
+	u.RawQuery = q.Encode()
+
+	st, resp, env2, _ := s.call(http.MethodGet, u.String(), nil, nil)
+	if env2 != nil {
+		_ = output.Print(env2, c.pretty, stdout)
+		return exitAPI
+	}
+	if st >= 400 {
+		_ = output.Print(errorEnvelope(st, resp, http.MethodGet), c.pretty, stdout)
+		return exitAPI
+	}
+	def, ok := parseJSON(resp).(map[string]any)
+	if !ok {
+		e := output.Fail(st, "unexpected response shape", "raw path: mcecli rest GET "+u.String())
+		_ = output.Print(e, c.pretty, stdout)
+		return exitAPI
+	}
+
+	e := output.OK(st, def)
+	e.Count = 1
+	if _, hasActivities := def["activities"]; !hasActivities && extras == "activities" {
+		e.Hint = "no activities[] in the response — a canvas-less journey (draft with no activities) or the platform trimmed it (extras variants observed identical)"
+	}
+	if version > 0 {
+		if v, ok := def["version"].(float64); ok && int(v) != version {
+			e.Hint = fmt.Sprintf("server returned version %d despite --version %d (versionNumber ignored for this shape) — versions that exist: %v",
+				int(v), version, existingVersions)
+		}
+	}
+	if e.Hint != "" {
+		e.Hint += " — "
+	}
+	e.Hint += "collection items (journey list, md pull journeys) are summaries — this is the full canvas; history: mcecli journey versions " + key
+	if c.fields != "" {
+		e.Data = output.Project(e.Data, splitFields(c.fields))
+		e.Hint += " (projected by --fields)"
+	}
+	_ = output.Print(e, c.pretty, stdout)
+	return exitOK
 }
 
 // journeyStats — population + activity summary for one journey, across ALL

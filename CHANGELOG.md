@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.3.0 — released
+
+### Added
+- `journey get <key> [--version N] [--extras activities|all|none]` —
+  curated deep read: the FULL journey definition incl. the activity canvas
+  (activities[].configurationArguments / metaData / outcomes / schema)
+  that collection reads (`journey list`, `md pull journeys`) lack BY
+  PLATFORM DESIGN (list items are summaries). One call for the latest
+  version (key:{key} prefix form); `--version N` resolves key → id via the
+  status endpoint (id stable across versions) then fetches that immutable
+  historical version. Unknown versions fail EARLY listing what exists; a
+  server-ignored versionNumber is surfaced as a hint (no-ignored-flags
+  rule); canvas-less responses are hinted; `--fields` projects the
+  definition. VERIFIED live: drafts return the canvas too; extras variants
+  observed identical in shape; historical versions carry their own canvas.
+  9 wire-asserted tests. `md pull journeys` envelope, SKILL.md and README
+  now point at the deep read (discoverability gap that sent agents astray
+  is closed at every entry point)
+
+### Fixed (round-8)
+- `de rows --where` returned 0 rows — ROOT-CAUSED: `<Properties>*</Properties>`
+  (wildcard) returns 0 results on DataExtensionObject retrieves; explicit
+  column lists work with any filter casing. Column list now resolved from
+  the fields API (wildcard never sent); Client context block added per
+  docs; wire assertions lock explicit columns + no-wildcard
+- `de add` before-images and `de diff` SOAP retrieves got explicit columns
+  too (their before-images were silently empty for the same reason)
+- `de rows --fields` projection is now case/PK-aware; `--where` 0-rows
+  caveat documented; stale-BU hint on empty results
+
+### Hardened (round-8)
+- multi-terminal concurrency: mid-execution profile/BU immunity locked by
+  test (context resolved once per process; every envelope self-describes
+  with context{profile,mid,bu,session}); atomic temp+rename writes for
+  config.json, `de dump`, asset pulls and state (no torn/corrupt files
+  under concurrent writers); Windows rename-retry for same-target races;
+  cross-call switch contract documented in SKILL.md (MCECLI_SESSION or
+  per-call --profile/--bu)
+
 ## v1.2.1 — released
 
 ### Fixed (round-7 independent agent field test)

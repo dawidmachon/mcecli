@@ -71,21 +71,24 @@ domain_verification      —                         Domain Verification
 | Response shape | VERIFIED | `<Results xsi:type="Account">` with UNPREFIXED children (default partnerAPI ns); `<OverallStatus>` sibling of Results |
 | Paging | UNVERIFIED | ContinueRequest not yet needed/implemented |
 
-## SOAP DE row retrieve — KNOWN BROKEN on the reference org
+## SOAP DE row retrieve — ROOT-CAUSED + FIXED (2026-09-27, round-8)
 
-`RetrieveRequest` with `ObjectType=DataExtensionObject[KEY]`, Properties,
-SimpleFilterPart → returns OverallStatus=OK with 0 Results on EVERY DE
-(proven false negative on a large DE multi-million-row, known-existing value).
-Evidence wire-dumped. Candidate causes, in test order:
+`RetrieveRequest` with `ObjectType=DataExtensionObject[KEY]`, SimpleFilterPart
+→ returned OverallStatus=OK with 0 Results on EVERY DE. ROOT CAUSE
+(isolated by controlled matrix — filter casing × column list):
 
-1. **Missing `<Client><ClientID>` context in RetrieveRequest** — official
-   docs list `Client` = "account ownership and context" on
-   DataExtensionObject. mcecli sends no Client block. If token context ≠
-   DE-owning BU, server may legitimately answer 0 rows. TEST: add
-   ClientID of DE-owning MID, compare.
-2. WS-Addressing headers (official samples include `<a:Action>Retrieve`
-   + `<a:To>` in header) — mcecli omits them; other SOAP calls work without,
-   but DE retrieve may gate on Action. TEST only if (1) fails.
+**`<tns:Properties>*</tns:Properties>` (the wildcard) returns 0 results.**
+With an EXPLICIT column list the identical request returns rows; filter
+property casing is irrelevant (lowercase schema names work). Every earlier
+"known broken" test inherited the wildcard from a shared helper — a
+false-negative chain, not a platform defect.
+
+Additional hardening (docs-listed, kept): `<tns:Client><tns:ClientID>`
+(DE-owning MID, or JWT enterprise id for account-level contexts) is now sent
+on DE retrieves. WS-Addressing headers were NOT needed.
+
+mcecli now resolves the column list from the fields API and never sends the
+wildcard (`de rows --where`, `de add` before-images, `de diff`).
 
 ### DOC-SOURCED facts (sf-docs-scrap, NOT yet validated live)
 | Fact | Source |
@@ -241,6 +244,26 @@ narrows to one version; an unknown version returns an empty array).
 Older versions are immutable history with their own status (Stopped/…).
 Curated: `mcecli journey list` + `mcecli journey versions <key>`.
 
+Journey DETAIL read (canvas) — VERIFIED live (round 8):
+- COLLECTION vs DETAIL: /interactions list items (journey list, md pull
+  journeys) are SUMMARIES BY PLATFORM DESIGN — no activities[] array.
+  The activity canvas (activities[].configurationArguments / metaData /
+  outcomes / schema) exists ONLY on the per-journey detail read:
+  GET /interaction/v1/interactions/key:{key} or /{definitionId}.
+- The detail read returns ~25 top-level properties (triggers/goals/exits/
+  defaults/campaigns/notifiers/metaData/…). Drafts return the canvas too
+  (not a published-only read).
+- extras param: activities / all / none ALL accepted; payload shape was
+  IDENTICAL across all three on every probed journey (canvas included
+  regardless; performance/stats fields never appeared — possibly require
+  journeys with send history).
+- ?versionNumber=N on the detail read IS honored: returns that immutable
+  historical version with its own canvas (verified v1 vs v4 shapes).
+- Unknown key on the key:{key} form → 404 "Interaction matching key not
+  found."
+- Curated: `mcecli journey get <key> [--version N] [--extras activities|all|none]`
+  (key → id two-step only for --version N; latest needs ONE call).
+
 Journey PERFORMANCE (VERIFIED live, round 6): the status endpoint's `id`
 is STABLE across versions (journey id, not per-version). Two summaries:
 - GET /interaction/v1/interactions/{id}/summary → {id, activities:
@@ -260,7 +283,7 @@ summaries in one envelope).
 |---|---|---|
 | GET /interaction/v1/interactions | VERIFIED | journeys; /interactions (NOT /journeys); {count,page,items}; newest version only; $pageSize NOT honored (server pages at 50); $filter/name filtering NOT honored — filter client-side |
 | GET /interaction/v1/interactions/status/key:{key} | VERIFIED | version history with ?AllVersions=true or ?VersionNumber=N (see notes above) |
-| GET /interaction/v1/interactions/{id} | UNVERIFIED | single journey detail ({id} = definitionId) |
+| GET /interaction/v1/interactions/{id} | VERIFIED | single journey detail by definitionId — FULL canvas (see detail-read block below); latest version by default; ?versionNumber=N narrows to an immutable historical version |
 | POST /interaction/v1/interactions/stop/{id} | UNVERIFIED | stops running journey; --confirm gated |
 | POST /interaction/v1/interactions/pause/{id} | UNVERIFIED | pauses journey; --confirm gated |
 | POST /interaction/v1/interactions/resume/{id} | UNVERIFIED | resumes journey; --confirm gated |

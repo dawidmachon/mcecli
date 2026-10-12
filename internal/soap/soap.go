@@ -420,15 +420,20 @@ func parseDERows(body []byte) ([]map[string]string, error) {
 // (server-side filter — one cheap call even on huge DEs). The DE key is
 // embedded in the ObjectType as DataExtensionObject[DE_KEY] (mcdev/sfmc-sdk
 // pattern). Returns flattened {column: value} rows.
-func RetrieveDERows(ctx context.Context, soapURL, token, deKey string, pk map[string]string) ([]map[string]string, error) {
-	return RetrieveFilteredRows(ctx, soapURL, token, deKey, nil, pk)
+// RetrieveDERows fetches rows of a data extension matching exact PK values
+// (server-side filter — one cheap call even on huge DEs). The DE key is
+// embedded in the ObjectType as DataExtensionObject[DE_KEY] (mcdev/sfmc-sdk
+// pattern). Returns flattened {column: value} rows. columns MUST be explicit:
+// wildcard <Properties>*</Properties> returns 0 results (root-caused round-8).
+func RetrieveDERows(ctx context.Context, soapURL, token, deKey string, pk map[string]string, columns []string) ([]map[string]string, error) {
+	return RetrieveFilteredRows(ctx, soapURL, token, deKey, columns, pk, "")
 }
 
 // RetrieveFilteredRows fetches rows from a data extension using SOAP
 // server-side filtering. The DE key is embedded in the ObjectType as
 // DataExtensionObject[DE_KEY] (mcdev/sfmc-sdk pattern). Filters are exact-match
 // (equals) on field names; multiple are ANDed. columns limits returned fields.
-func RetrieveFilteredRows(ctx context.Context, soapURL, token, deKey string, columns []string, filters map[string]string) ([]map[string]string, error) {
+func RetrieveFilteredRows(ctx context.Context, soapURL, token, deKey string, columns []string, filters map[string]string, clientMID string) ([]map[string]string, error) {
 	var colProps strings.Builder
 	for _, c := range columns {
 		colProps.WriteString("        <tns:Properties>" + xmlEscape(c) + "</tns:Properties>\n")
@@ -441,15 +446,27 @@ func RetrieveFilteredRows(ctx context.Context, soapURL, token, deKey string, col
 		filterStr = "        <tns:Filter xsi:type=\"tns:SimpleFilterPart\">" + buildPKFilter(filters) + "</tns:Filter>\n"
 	}
 	objectType := "DataExtensionObject[" + deKey + "]"
-	body := fmt.Sprintf(envelopeTpl, xmlEscape(token), objectType, colProps.String()+filterStr)
+	// Client context (round-8): official docs list Client = "account ownership
+	// and context" on DataExtensionObject retrieves. Without the DE-owning MID
+	// the server answers OK with 0 rows on some tenants — the long-standing
+	// "SOAP DE retrieve known broken" issue. Wire-asserted in tests.
+	clientStr := ""
+	if clientMID != "" {
+		clientStr = "        <tns:Client><tns:ClientID>" + xmlEscape(clientMID) + "</tns:ClientID></tns:Client>\n"
+	}
+	body := fmt.Sprintf(envelopeTpl, xmlEscape(token), objectType, clientStr+colProps.String()+filterStr)
+	var debugReq []byte
 	if p := config.EnvGet("MCECLI_SOAP_DEBUG"); p != "" {
-		_ = os.WriteFile(p+".derows",
-			[]byte(strings.ReplaceAll(body, token, "[REDACTED]")), 0o600)
+		debugReq = []byte(strings.ReplaceAll(body, token, "[REDACTED]"))
 	}
 	res, err := httpc.Do(ctx, http.MethodPost, soapURL+"/Service.asmx", "", []byte(body),
 		map[string]string{"SOAPAction": "Retrieve", "Content-Type": "text/xml; charset=UTF-8", "fueloauth": token})
 	if err != nil {
 		return nil, fmt.Errorf("soap request failed: %w", err)
+	}
+	if debugReq != nil {
+		_ = os.WriteFile(config.EnvGet("MCECLI_SOAP_DEBUG")+".derows", debugReq, 0o600)
+		_ = os.WriteFile(config.EnvGet("MCECLI_SOAP_DEBUG")+".derows.res", res.Body, 0o600)
 	}
 	rows, perr := parseDERows(res.Body)
 	if perr != nil {

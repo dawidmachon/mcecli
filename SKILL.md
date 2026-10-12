@@ -38,6 +38,23 @@ writes, 401 → auto re-mint. PROD guard: selecting a prod-named profile
 prints ⚠️ on stderr; MCECLI_NO_PROD=1 hard-refuses it. Stateless alternative:
 pass --profile X --bu Y per call.
 
+Concurrency contract (verified by tests, round-8):
+- MID-EXECUTION IS SAFE: each mcecli process resolves profile/BU/host ONCE
+  at startup and never re-reads state — another agent's `use` mid-flight
+  cannot redirect your running command. Every envelope carries
+  context{profile,mid,bu,session} so you can always see who answered.
+- CROSS-CALL: context switches apply to the NEXT call in the SAME session.
+  Two agents doing different tasks MUST each set MCECLI_SESSION (or use
+  per-call --profile/--bu) — otherwise they share one cursor and profile
+  switches race between calls.
+- Concurrent writes are atomic or append-safe: state file + config.json +
+  dumps (temp+rename), token cache (atomic), journal (O_APPEND).
+  Same-session concurrent `use` = last-write-wins. Two agents dumping the
+  SAME DE = last complete dump wins (partial dumps keep partial data,
+  loudly hinted).
+- Caveat: `--profile X` does not reset a session BU that belongs to another
+  profile — the error names it; run `mcecli use X <bu>` instead.
+
 ## First call of a session
 
     mcecli status        # which profile / BU am I on? (no network)
@@ -57,6 +74,7 @@ Per-call override instead of switching: `mcecli --bu <name|MID> de list`
     mcecli api data --filter customobject      # EXPLORE the API: discovery-based method index
     mcecli api messaging getMessageSendsCollection   # method detail + ready mcecli rest line
     mcecli journey list                        # journeys in this BU (newest version per key)
+    mcecli journey get <key>                   # FULL definition: activities[].configurationArguments/metaData (collection items are summaries)
     mcecli journey versions <key>              # FULL version history: v1..vN with statuses (one call)
     mcecli journey stats <key>                 # population + activity summary across ALL versions (is it working?)
     mcecli soap retrieve List --props ID,ListName --filter ListName=News   # any SOAP object not curated yet
@@ -151,8 +169,8 @@ Verified write patterns on this platform:
   instead of 403 (more permissive). Token scope changes require --refresh
   to take effect (cached tokens keep old scopes until expiry).
 - Row reads have NO server-side filter via REST; for huge DEs use
-  `mcecli de rows <key> --where "Field=value"` (SOAP server-side filter, works on
-  millions of rows in <1s). For broader analysis, `mcecli de dump` and grep locally.
+  `mcecli de rows <key> --where "Field=value"` (SOAP server-side filter; the tool
+  resolves explicit columns — wildcard Properties returns 0 rows, root-caused). For broader analysis, `mcecli de dump` and grep locally.
 - Data views (_Click, _Open, _Sent, _Bounce) are SOAP-only system DEs —
   NOT accessible via the REST customobjectdata API. Read them with
   `mcecli dv sent|clicks|opens|bounces|unsubs|notsent` (SOAP event objects,
@@ -177,6 +195,7 @@ Verified write patterns on this platform:
 | bulk update known rows | `mcecli rest PUT data/v1/async/dataextensions/key:{key}/rows` with many items | batched async |
 | filter rows in huge DE (100k+) | `mcecli de rows <key> --where "Field=value"` — SOAP server-side filtering | works on millions of rows in <1s; field names case-sensitive; use exact schema field names from `mcecli de get` |
 | filter journeys by name | NOT supported server-side — /interactions ignores $filter | `mcecli journey list --search X` filters client-side; journey VERSIONS: `mcecli journey versions <key>` (one call, AllVersions=true) |
+| full journey canvas / activity config | `mcecli journey get <key> [--version N] [--extras all]` — activities[].configurationArguments/metaData | `md pull journeys` + `journey list` items are SUMMARIES (platform: collection endpoint carries no canvas); --extras: activities\|all\|none; historical version via --version N |
 | webhook monitoring | `mcecli ens callbacks` + `mcecli ens subs <id>` — which platform events stream where (tenant monitors automation started/errored) — VERIFIED live | writes gated via rest |
 | global unsubscribe categories | `mcecli guc list` — enterprise unsubscribe categories (platform defaults + org config) | |
 | email send definitions | `mcecli esd list|get` — user-initiated send setup (SendDefinitionStatus not retrievable) — VERIFIED live | |
