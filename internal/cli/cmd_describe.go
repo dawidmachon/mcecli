@@ -84,6 +84,17 @@ var soapCatalog = []soapObject{
 	{
 		objectType: "AccountUser", alias: "users list", use: "platform users (who has access)",
 		props: []prop{{"ID", "live"}, {"UserID", "live"}, {"Name", "live"}, {"Email", "live"}, {"ActiveFlag", "live"}, {"DefaultBusinessUnit", "live"}, {"Delete", "live"}},
+		quirks: []string{"Roles and UserPermissions props are ACCEPTED but return silently EMPTY on retrieve (UserPermissions documented \"Not used.\") — user roles live on the Role object, permission values on UserAccess (admin principal required)"},
+	},
+	{
+		objectType: "Role", alias: "user roles", use: "role catalog (system-defined + account-defined)",
+		props: []prop{{"ObjectID", "live"}, {"Name", "live"}, {"CustomerKey", "live"}, {"IsSystemDefined", "live"}, {"IsPrivate", "live"}},
+		quirks: []string{"RETRIEVABLE live despite the official support matrix marking Role.Retrieve unsupported (stale matrix cell) — props ObjectID/Name/CustomerKey/IsSystemDefined/IsPrivate verified; ID and Value are REJECTED (\"do not match with the fields of Role\")", "Create/Update/Delete per matrix need role-management rights"},
+	},
+	{
+		objectType: "UserAccess", alias: "user permissions", use: "permission values per user (docs: retrieve requires an ADMIN principal)",
+		props: []prop{{"Name", "docs"}, {"Value", "docs"}, {"CustomerKey", "docs"}},
+		quirks: []string{"valid ObjectType (NOT invalid like PermissionSet/AccountRole) but gated: non-admin principal → \"The specified principal does not have permission to view the requested UserAccess data\""},
 	},
 	{
 		objectType: "DataFolder", alias: "folders", use: "content folders → categoryId for de/query create",

@@ -130,6 +130,20 @@ Property-set reality vs docs (probed by bisection 2026-09-16):
 - SentEvent +: EventType, ListID, TriggeredSendDefinitionObjectID, Client.ID (Client.ID returns empty via direct-child parse)
 - BounceEvent +: BounceType, BounceCategory, EventType (BounceReason NOT retrievable — docs list it)
 - UnsubEvent +: IsMasterUnsubscribed, EventType (UnsubscribeType, OptOut, ListID NOT retrievable)
+
+## Roles & permissions via SOAP — VERIFIED (docs corpus + live, 2026-10-12)
+
+| Subject | Verdict | Notes |
+|---|---|---|
+| AccountUser.Roles / .UserPermissions props | SILLENTLY EMPTY | props accepted, retrieve returns 200-OK rows with both empty; docs mark UserPermissions "Not used." — per-user roles do NOT ride on AccountUser retrieves |
+| PermissionSet | INVALID ObjectType | "PermissionSet is not a valid ObjectType." — it is a CHILD type on Role (PermissionSets array), not a top-level retrieve target |
+| AccountRole | INVALID ObjectType | "AccountRole is not a valid ObjectType." — no such object in the SOAP API (docs corpus has no page) |
+| Role | RETRIEVABLE (matrix is STALE) | official support matrix marks Role.Retrieve UNSUPPORTED, but the wire returns rows with props ObjectID/Name/CustomerKey/IsSystemDefined/IsPrivate (+PartnerKey auto); props ID and Value are REJECTED ("do not match with the fields of Role") — property validation fires before method support |
+| UserAccess | VALID but ADMIN-GATED | the permissions object (retrieve-only per matrix); non-admin principal → "The specified principal does not have permission to view the requested UserAccess data" (docs: "you must be an admin") |
+
+Working recipes: role catalog → `mcecli soap retrieve Role --props ObjectID,Name,CustomerKey,IsSystemDefined,IsPrivate`;
+per-user permission values → UserAccess (needs an admin-scoped installed package);
+user→role assignment is NOT exposed via SOAP retrieve on these objects.
 - OpenEvent/NotSentEvent +: EventType
 - SentEvent returns SubscriberID inside PartnerProperties pairs → mcecli parse flattens them into the row
 
