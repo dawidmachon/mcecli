@@ -71,20 +71,25 @@ domain_verification      —                         Domain Verification
 | Response shape | VERIFIED | `<Results xsi:type="Account">` with UNPREFIXED children (default partnerAPI ns); `<OverallStatus>` sibling of Results |
 | Paging | UNVERIFIED | ContinueRequest not yet needed/implemented |
 
-QAA catalog = the API USER's grant mirror — VERIFIED (multi-auth matrix):
-- BusinessUnit + QueryAllAccounts enumerates exactly the accounts the
-  installed package's service user can access; contacts/v1/schema →
-  availableBusinessUnits mirrors it 1:1. A SUCCESSFUL enterprise-MID token
-  mint is NOT evidence of estate visibility (mint ≠ grant).
-- Observed outcome classes: enterprise-root-bound package → 1 row (the
-  root itself, "no additional rows"); child-BU-bound package → 0 rows even
-  from the enterprise token (not even a calling context); child-context
-  token → only that child. The FULL hierarchy requires estate-wide API-user
-  BU association (the historical VERIFIED-full case) — or fresh-package
-  grants still propagating.
-- Rule of thumb: availableBusinessUnits count == the row count QAA can
-  ever return for that credential. Check it FIRST when discovery
-  "unexpectedly" returns one row — the flag is fine, the grant is narrow.
+QAA regression ROOT-CAUSED + FIXED (2026-10-12 — SECOND ship of the
+silent-param-drop class): `RetrieveBusinessUnits` set QueryAllAccounts as
+a variadic DEFAULT; the production caller (`bu discover`) passes
+`Opts{Refresher: …}`, and the override clobbered the default — estate
+discovery degraded to 1-row calling-context reads while the no-opts wire
+test kept passing (it never exercised the production call shape). Fixed:
+QAA is the function's NON-OVERRIDABLE contract; a second wire test now
+mirrors the production call shape (opts + Refresher).
+- Post-fix live matrix, SAME credentials that read 1 row pre-fix:
+  enterprise-root-bound packages → FULL hierarchy restored; the
+  deliberately-limited package → 0 rows even from an enterprise-MID token
+  (genuine grant boundary — the one real "cannot see the estate" case).
+- Token/element variants verified EQUIVALENT for a granted package:
+  account_id=EID at mint vs omitted, plus ClientIDs and Client-header
+  blocks — all return identical full trees. The flag + EID-scoped token
+  is sufficient; no extra request elements needed.
+- contacts/v1/schema → availableBusinessUnits is NOT a mirror of QAA
+  visibility (showed 1 entry while QAA returned the full estate) — do not
+  use it to predict BusinessUnit+QAA row counts.
 
 ## SOAP DE row retrieve — ROOT-CAUSED + FIXED (2026-09-27, round-8)
 

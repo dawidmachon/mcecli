@@ -87,11 +87,16 @@ func Retrieve(ctx context.Context, soapURL, token, objectType string, properties
 // (ObjectType=BusinessUnit + QueryAllAccounts). VERIFIED live: requires a
 // token minted for the ENTERPRISE MID; from a BU/home context it returns
 // only the calling unit.
+// QueryAllAccounts is this function's CONTRACT and can NOT be overridden
+// by opts: a caller passing Opts{Refresher: …} once silently dropped it
+// (variadic default clobbered by the override) and estate discovery
+// degraded to the calling context — wire-tested WITH opts since.
 func RetrieveBusinessUnits(ctx context.Context, soapURL, token string, opts ...Opts) ([]map[string]string, string, error) {
 	o := Opts{QueryAllAccounts: true}
 	if len(opts) > 0 {
 		o = opts[0]
 	}
+	o.QueryAllAccounts = true // non-negotiable — see doc comment
 	return retrieve(ctx, soapURL, token, "BusinessUnit",
 		[]string{"ID", "Name", "AccountType", "ParentID", "ParentName", "IsActive"}, o)
 }

@@ -136,6 +136,31 @@ func TestRetrieveBusinessUnitsSendsQueryAllAccounts(t *testing.T) {
 	}
 }
 
+// TestRetrieveBusinessUnitsKeepsQueryAllAccountsWithOpts: the PRODUCTION
+// caller (bu discover) passes Opts{Refresher: …} — and the variadic
+// override used to CLOBBER the QueryAllAccounts default (second ship of
+// the same bug class, caught by wire-dump 2026-10-12). The contract: QAA
+// survives ANY opts the caller passes.
+func TestRetrieveBusinessUnitsKeepsQueryAllAccountsWithOpts(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := make([]byte, 8192)
+		n, _ := r.Body.Read(b)
+		got = string(b[:n])
+		_, _ = w.Write([]byte(`{"":null}`))
+	}))
+	defer srv.Close()
+
+	_, _, err := RetrieveBusinessUnits(context.Background(), srv.URL, "T", Opts{
+		Refresher: func() (string, error) { return "T2", nil },
+		MaxRows:   10,
+	})
+	_ = err
+	if !strings.Contains(got, "<tns:QueryAllAccounts>true</tns:QueryAllAccounts>") {
+		t.Fatalf("QAA must survive caller opts (variadic clobber regression): %s", got)
+	}
+}
+
 // TestRetrieveEventObjectsSendsFilterAndProps locks the dv wire shape
 // (found live 2026-09-16): event-object retrieves MUST carry Properties,
 // the server-side EventDate filter (greatly cheaper than client-side
